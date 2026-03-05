@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import argparse
 import numpy as np
 
-from src.linear_sys import LinearSystem
-from src.poly_obs import PolynomialObserver
+from src.systems import ODEDiscretizedSystem
+from src.observers import PolynomialObserver
 from src.koopman import data_koopman_eigen
 
 parser = argparse.ArgumentParser()
@@ -15,15 +17,21 @@ args = parser.parse_args()
 # Define system dimension
 state_dim = 2
 
-# Define linear dynamics
-A = np.array([
-    [0.5, 0.0],
-    [0.0, 0.4],
-])
-b = np.array([0.1, -0.1])
+# Define dynamics
+def f(X: np.ndarray) -> np.ndarray:
+    X0 = X[:, 0]
+    X1 = X[:, 1]
+    dX0 = X1
+    dX1 = 0.1 * X1 - X0 - 0.5 * X1**3
+    return np.column_stack([dX0, dX1])
 
 # Create system
-sys = LinearSystem(A, b)
+sys = ODEDiscretizedSystem(
+    f=f,
+    state_dim=2,
+    T=1.0,     # discrete map horizon
+    dt=0.01,   # RK4 integration step
+)
 
 # -------------------------
 # Observer definition
@@ -58,13 +66,12 @@ obs.fit(X, V)
 N = 500
 max_iter = 50
 
-X, V_trace = data_koopman_eigen(sys, obs, N, max_iter, trace=5)
+X, V_rec = data_koopman_eigen(sys, obs, N, max_iter, rec=5)
 
 # ---- plotting ----
 
 if args.plot:
     import matplotlib.pyplot as plt
-    # from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 
     V = obs.eval(X)
 
@@ -108,7 +115,7 @@ if args.plot:
             edgecolors="none",
         )
 
-        for W in V_trace[:-1]:
+        for W in V_rec[:-1]:
             ax.scatter(
                 X[:, 0],
                 X[:, 1],

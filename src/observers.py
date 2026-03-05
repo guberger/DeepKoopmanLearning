@@ -1,14 +1,149 @@
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
 import numpy as np
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.linear_model import Ridge
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 
-from src.koopman import AbstractObserver
+
+class AbstractObserver(ABC):
+    """
+    Abstract base class for vector-valued observable functions.
+
+    Attributes
+    ----------
+    input_dim : int
+        Dimension of the input.
+    output_dim : int
+        Dimension of the output.
+    input_dtype : numpy.dtype
+        Floating dtype used for inputs.
+    output_dtype : numpy.dtype
+        Floating dtype used for outputs.
+    """
+
+    input_dim: int
+    output_dim: int
+    input_dtype: np.dtype
+    output_dtype: np.dtype
+
+    @abstractmethod
+    def fit(self, X: np.ndarray, V: np.ndarray) -> None:
+        """
+        Fit the observer so that ``eval(X)`` approximates ``V``.
+
+        Parameters
+        ----------
+        X : ndarray of shape (N, input_dim)
+            Input points at which the observer is fit.
+        V : ndarray of shape (N, output_dim)
+            Target values of the observer at the points ``X``.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def eval(self, X: np.ndarray) -> np.ndarray:
+        """
+        Evaluate the observer.
+
+        Parameters
+        ----------
+        X : ndarray of shape (N, input_dim)
+            Input points.
+
+        Returns
+        -------
+        V : ndarray of shape (N, output_dim)
+            Observer values at the input points.
+        """
+        raise NotImplementedError
 
 
+class PolynomialObserver(AbstractObserver):
+    """
+    Polynomial observer implemented using scikit-learn.
+
+    Notes
+    -----
+    The model internally computes
+
+        ``V ≈ Φ(X) @ W + b``
+
+    where ``Φ(X)`` are polynomial features of ``X``.
+
+    Parameters
+    ----------
+    input_dim : int
+        Dimension of the input space.
+    output_dim : int
+        Dimension of the observable output.
+    degree : int, default=2
+        Maximum degree of the polynomial feature expansion.
+    alpha : float, default=1e-6
+        Ridge regularization strength. Set to ``0.0`` for (near)
+        ordinary least squares.
+    dtype : numpy.dtype, default=np.float64
+        Floating dtype used for inputs and outputs.
+    """
+
+    def __init__(
+        self,
+        input_dim: int,
+        output_dim: int,
+        degree: int = 2,
+        *,
+        alpha: float = 1e-6,
+        dtype: np.dtype = np.float64,
+    ):
+        self.input_dim = int(input_dim)
+        self.output_dim = int(output_dim)
+        self.input_dtype = np.dtype(dtype)
+        self.output_dtype = np.dtype(dtype)
+
+        self.degree = int(degree)
+        self.alpha = float(alpha)
+
+        self.model = Pipeline(
+            steps=[
+                ("poly", PolynomialFeatures(degree=self.degree, include_bias=False)),
+                ("reg", Ridge(alpha=self.alpha, fit_intercept=True)),
+            ]
+        )
+
+    def fit(self, X: np.ndarray, V: np.ndarray) -> None:
+        X = np.asarray(X, dtype=self.input_dtype)
+        V = np.asarray(V, dtype=self.output_dtype)
+
+        if X.ndim != 2 or X.shape[1] != self.input_dim:
+            raise ValueError(
+                f"X must have shape (n_samples, {self.input_dim}), got {X.shape}."
+            )
+
+        if V.ndim != 2 or V.shape[1] != self.output_dim:
+            raise ValueError(
+                f"V must have shape (n_samples, {self.output_dim}), got {V.shape}."
+            )
+
+        self.model.fit(X, V)
+
+    def eval(self, X: np.ndarray) -> np.ndarray:
+        X = np.asarray(X, dtype=self.input_dtype)
+
+        if X.ndim != 2 or X.shape[1] != self.input_dim:
+            raise ValueError(
+                f"X must have shape (n_samples, {self.input_dim}), got {X.shape}."
+            )
+
+        return np.asarray(self.model.predict(X), dtype=self.output_dtype)
+    
+    
 class _MLP(nn.Module):
     """
-    Simple fully-connected MLP used by :class:`NeuralObserver`.
+    Simple fully-connected MLP used by ``NeuralObserver``.
 
     Parameters
     ----------
@@ -71,21 +206,10 @@ class NeuralObserver(AbstractObserver):
     """
     Neural-network observer implemented using PyTorch.
 
-    The observer models a vector-valued function
-
-        ``f : R^{input_dim} -> R^{output_dim}``
-
-    using a multi-layer perceptron (MLP) trained with mean-squared error.
-
     Notes
     -----
-    This class follows the batch-first convention:
-
-    - Inputs ``X`` have shape ``(N, input_dim)``.
-    - Outputs ``V`` have shape ``(N, output_dim)``.
-
-    The method :meth:`fit` performs gradient-based optimization for a fixed
-    number of epochs. The method :meth:`eval` runs the model in evaluation mode
+    The method ``fit`` performs gradient-based optimization for a fixed
+    number of epochs. The method ``eval`` runs the model in evaluation mode
     and returns NumPy arrays on CPU.
 
     Parameters
@@ -112,31 +236,6 @@ class NeuralObserver(AbstractObserver):
         Floating dtype used for inputs and outputs. Must be ``np.float32`` or ``np.float64``.
     seed : int or None, default=0
         Random seed for reproducibility. If ``None``, no seeding is performed.
-
-    Attributes
-    ----------
-    input_dim : int
-        Dimension of the input.
-    output_dim : int
-        Dimension of the output.
-    input_dtype : numpy.dtype
-        Floating dtype used for inputs.
-    output_dtype : numpy.dtype
-        Floating dtype used for outputs.
-    device : torch.device
-        Torch device used for training and evaluation.
-    torch_dtype : torch.dtype
-        Torch floating dtype corresponding to ``dtype``.
-    model : torch.nn.Module
-        The MLP network.
-    loss_fn : torch.nn.Module
-        Loss function (mean-squared error).
-    optimizer : torch.optim.Optimizer
-        Optimizer (AdamW).
-    batch_size : int
-        Batch size used during training.
-    epochs : int
-        Number of epochs per :meth:`fit` call.
     """
 
     def __init__(
@@ -190,20 +289,6 @@ class NeuralObserver(AbstractObserver):
         self.epochs = int(epochs)
 
     def fit(self, X: np.ndarray, V: np.ndarray) -> None:
-        """
-        Fit the neural observer.
-
-        Parameters
-        ----------
-        X : ndarray of shape (N, input_dim)
-            Input points where the observer is fit.
-        V : ndarray of shape (N, output_dim)
-            Target observable values at the input points.
-
-        Notes
-        -----
-        This method performs gradient-based training for ``self.epochs`` epochs.
-        """
         X = np.asarray(X, dtype=self.input_dtype)
         V = np.asarray(V, dtype=self.output_dtype)
 
@@ -235,19 +320,6 @@ class NeuralObserver(AbstractObserver):
 
     @torch.no_grad()
     def eval(self, X: np.ndarray) -> np.ndarray:
-        """
-        Evaluate the observer.
-
-        Parameters
-        ----------
-        X : ndarray of shape (N, input_dim)
-            Input points.
-
-        Returns
-        -------
-        V : ndarray of shape (N, output_dim)
-            Predicted observable values.
-        """
         X = np.asarray(X, dtype=self.input_dtype)
 
         if X.ndim != 2 or X.shape[1] != self.input_dim:

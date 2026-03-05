@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import argparse
 import numpy as np
 
-from src.linear_sys import LinearSystem
-from src.poly_obs import PolynomialObserver
+from src.systems import DiscreteMapSystem
+from src.observers import PolynomialObserver
 from src.koopman import data_koopman_eigen
 
 parser = argparse.ArgumentParser()
@@ -19,8 +21,11 @@ state_dim = 1
 A = np.array([[0.9]])
 b = np.array([0.1])
 
+def f(X: np.ndarray) -> np.ndarray:
+    return X @ A + b
+
 # Create system
-sys = LinearSystem(A, b)
+sys = DiscreteMapSystem(f, state_dim)
 
 # -------------------------
 # Observer definition
@@ -51,7 +56,7 @@ obs.fit(X, V)
 N = 500
 max_iter = 50
 
-X, V_trace = data_koopman_eigen(sys, obs, N, max_iter, trace=5)
+X, V_rec = data_koopman_eigen(sys, obs, N, max_iter, rec=5)
 
 # ---- plotting ----
 
@@ -76,7 +81,7 @@ if args.plot:
         # training samples
         ax.scatter(X[:, 0], V[:, j], s=30, alpha=0.5)
 
-        for W in V_trace[:-1]:
+        for W in V_rec[:-1]:
             ax.scatter(X[:, 0], W[:, j], s=20, alpha=0.5, edgecolors="none")
 
         # learned Koopman modes

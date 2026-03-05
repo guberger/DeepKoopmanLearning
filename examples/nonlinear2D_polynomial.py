@@ -4,7 +4,7 @@ import argparse
 import numpy as np
 
 from src.systems import DiscreteMapSystem
-from src.observers import NeuralObserver
+from src.observers import PolynomialObserver
 from src.koopman import data_koopman_eigen
 
 parser = argparse.ArgumentParser()
@@ -18,14 +18,12 @@ args = parser.parse_args()
 state_dim = 2
 
 # Define linear dynamics
-A = np.array([
-    [0.5, 0.0],
-    [0.0, 0.4],
-])
-b = np.array([0.1, -0.1])
-
 def f(X: np.ndarray) -> np.ndarray:
-    return X @ A + b
+    X0 = X[:, 0]
+    X1 = X[:, 1]
+    X0_next = 0.9 * X0
+    X1_next = 0.8 * X1 + (0.8 - 0.9**2) * X0**2
+    return np.column_stack([X0_next, X1_next])
 
 # Create system
 sys = DiscreteMapSystem(f, state_dim)
@@ -38,19 +36,7 @@ input_dim = state_dim
 output_dim = 3
 
 # Create observer
-obs = NeuralObserver(
-    input_dim,
-    output_dim,
-    hidden_dims=(64, 64),
-    activation="tanh",
-    lr=1e-3,
-    weight_decay=0.0,
-    batch_size=128,
-    epochs=100,
-    device=None,
-    dtype=np.float32,
-    seed=1,
-)
+obs = PolynomialObserver(input_dim, output_dim, degree=3, alpha=1e-4)
 
 # Initialize observer
 rng = np.random.default_rng(1)

@@ -15,14 +15,15 @@ args = parser.parse_args()
 # System definition
 # -------------------------
 # Define system dimension
-state_dim = 1
+state_dim = 2
 
 # Define linear dynamics
-A = np.array([[0.9]])
-b = np.array([0.1])
-
 def f(X: np.ndarray) -> np.ndarray:
-    return X @ A + b
+    X0 = X[:, 0]
+    X1 = X[:, 1]
+    X0_next = 0.9 * X0
+    X1_next = 0.8 * X1 + (0.8 - 0.9**2) * X0**2
+    return np.column_stack([X0_next, X1_next])
 
 # Create system
 sys = DiscreteMapSystem(f, state_dim)
@@ -54,9 +55,13 @@ rng = np.random.default_rng(1)
 N = 200
 X = sys.sample(N)
 
-# target: V[:, k] = cos(alpha * k * X[:, 0] + phi) + noise
-X_ang = X @ (np.array([range(output_dim)]) * 1.5) + 1
-V = np.cos(X_ang) + 0.1 * rng.normal(size=(N, output_dim))
+# target: V[:, k] =
+#     cos(alpha * k * X[:, 0] + phi0)
+#     + sin(alpha * k * X[:, 1] + phi1)
+#     + noise
+X0_ang = X[:, [0]] @ (np.array([range(output_dim)]) * 1.5) + 1
+X1_ang = X[:, [1]] @ (np.array([range(output_dim)]) * 1.5) - 1
+V = np.cos(X0_ang) + np.sin(X1_ang) + 0.1 * rng.normal(size=(N, output_dim))
 Q, _ = np.linalg.qr(V, mode="reduced")
 V = Q * np.sqrt(N)
 
@@ -66,7 +71,7 @@ obs.fit(X, V)
 # Koopman iterations
 # -------------------------
 N = 500
-max_iter = 100
+max_iter = 50
 
 X, V_rec = data_koopman_eigen(sys, obs, N, max_iter, rec=5)
 
@@ -78,31 +83,60 @@ if args.plot:
     V = obs.eval(X)
 
     # Smooth grid for plotting the learned function
-    X_grid = np.linspace(X.min(), X.max(), 400)[:, None]
+    n_grid = 100
+    x1 = np.linspace(X[:, 0].min(), X[:, 0].max(), n_grid)
+    x2 = np.linspace(X[:, 1].min(), X[:, 1].max(), n_grid)
+    X1, X2 = np.meshgrid(x1, x2)
+    X_grid = np.column_stack([X1.ravel(), X2.ravel()])
     V_grid = obs.eval(X_grid)
 
-    fig, axes = plt.subplots(1, output_dim, figsize=(10, 4), sharex=True)
+    fig, axes = plt.subplots(
+        1, output_dim,
+        figsize=(12, 5),
+        subplot_kw={"projection": "3d"},
+    )
 
     if output_dim == 1:
         axes = [axes]
+
+    vmin = np.min(V)
+    vmax = np.max(V)
 
     for j in range(output_dim):
 
         ax = axes[j]
 
+        # reshape grid evaluation
+        Z = V_grid[:, j].reshape(n_grid, n_grid)
+
+        # contour plot of learned function
+        ax.plot_surface(X1, X2, Z, linewidth=0, antialiased=True, alpha=0.85)
+
         # training samples
-        ax.scatter(X[:, 0], V[:, j], s=30, alpha=0.5)
+        ax.scatter(
+            X[:, 0],
+            X[:, 1],
+            V[:, j],
+            s=20,
+            alpha=0.5,
+            edgecolors="none",
+        )
 
         for W in V_rec[:-1]:
-            ax.scatter(X[:, 0], W[:, j], s=20, alpha=0.5, edgecolors="none")
-
-        # learned Koopman modes
-        ax.plot(X_grid[:, 0], V_grid[:, j], linestyle="--", linewidth=2)
+            ax.scatter(
+                X[:, 0],
+                X[:, 1],
+                W[:, j],
+                s=10,
+                alpha=0.2,
+                edgecolors="none",
+            )
 
         ax.set_title(f"Output {j}")
-        ax.set_xlabel("x")
-        ax.set_ylabel("value")
-        ax.set_ylim([np.min(V), np.max(V)])
+        ax.set_xlabel("x1")
+        ax.set_ylabel("x2")
+        ax.set_zlabel("value")
+        ax.set_zlim([vmin, vmax])
 
     plt.tight_layout()
     plt.show()

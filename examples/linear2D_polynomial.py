@@ -4,7 +4,7 @@ import argparse
 import numpy as np
 
 from src.systems import DiscreteMapSystem
-from src.observers import NeuralObserver
+from src.observers import PolynomialObserver
 from src.koopman import data_koopman_eigen
 
 parser = argparse.ArgumentParser()
@@ -38,19 +38,7 @@ input_dim = state_dim
 output_dim = 3
 
 # Create observer
-obs = NeuralObserver(
-    input_dim,
-    output_dim,
-    hidden_dims=(64, 64),
-    activation="tanh",
-    lr=1e-3,
-    weight_decay=0.0,
-    batch_size=128,
-    epochs=100,
-    device=None,
-    dtype=np.float32,
-    seed=1,
-)
+obs = PolynomialObserver(input_dim, output_dim, degree=3, alpha=1e-4)
 
 # Initialize observer
 rng = np.random.default_rng(1)

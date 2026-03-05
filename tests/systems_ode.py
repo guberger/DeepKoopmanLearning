@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 import argparse
 import numpy as np
 
-from src.linear_sys import LinearSystem
+from src.systems import ODEDiscretizedSystem
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--plot", action="store_true")
@@ -16,15 +18,21 @@ print("Start tests neural_obs:")
 # Define system dimension
 state_dim = 2
 
-# Define linear dynamics
-A = np.array([
-    [0.9, 0.2],
-    [-0.3, 0.9],
-])
-b = np.array([0.1, -0.05])
+# Define dynamics
+def f(X: np.ndarray) -> np.ndarray:
+    X0 = X[:, 0]
+    X1 = X[:, 1]
+    dX0 = X1
+    dX1 = 0.1 * X1 - X0 - 0.5 * X1**3
+    return np.column_stack([dX0, dX1])
 
 # Create system
-sys = LinearSystem(A, b)
+sys = ODEDiscretizedSystem(
+    f=f,
+    state_dim=2,
+    T=1.0,     # discrete map horizon
+    dt=0.01,   # RK4 integration step
+)
 
 # Sample initial states
 X0 = sys.sample(N=5, seed=0)
@@ -44,7 +52,7 @@ if args.plot:
     import matplotlib.pyplot as plt
 
     # Simulate trajectory
-    T = 30
+    T = 100
     X = sys.sample(1, seed=1)   # shape (1, state_dim)
 
     traj = [X[0]]
