@@ -49,9 +49,9 @@ rng = np.random.default_rng(1)
 N = 200
 X = sys.sample(N)
 
-# target: V[:, k] = cos(2 * pi * (k + 1) * X[:, 0] + phi) + noise
-X_ang = X @ (np.array([range(1, output_dim + 1)]) * np.pi) + np.pi / 5
-V = np.cos(X_ang) + 1 + 0.1 * rng.normal(size=(N, output_dim))
+# target: V[:, k] = cos(alpha * k * X[:, 0] + phi) + noise
+X_ang = X @ (np.array([range(output_dim)]) * 1.5) + 1
+V = np.cos(X_ang) + 0.1 * rng.normal(size=(N, output_dim))
 Q, _ = np.linalg.qr(V, mode="reduced")
 V = Q * np.sqrt(N)
 
@@ -70,12 +70,16 @@ X, V_trace = data_koopman_eigen(sys, obs, N, max_iter, trace=5)
 if args.plot:
     import matplotlib.pyplot as plt
 
+    V = obs.eval(X)
+
     # Smooth grid for plotting the learned function
     X_grid = np.linspace(X.min(), X.max(), 400)[:, None]
     V_grid = obs.eval(X_grid)
-    V = obs.eval(X)
 
     fig, axes = plt.subplots(1, output_dim, figsize=(10, 4), sharex=True)
+
+    if output_dim == 1:
+        axes = [axes]
 
     for j in range(output_dim):
 
