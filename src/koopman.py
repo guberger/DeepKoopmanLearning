@@ -133,7 +133,8 @@ def data_koopman_eigen(
     N: int,
     max_iter: int,
     seed: int | None = None,
-) -> None:
+    trace: int | None = None,
+) -> tuple[np.ndarray, np.ndarray, list[np.ndarray]]:
     """
     Iterative Koopman eigenfunction estimation from data (power iteration style).
 
@@ -152,6 +153,18 @@ def data_koopman_eigen(
         Maximum number of iterations.
     seed : int or None, default=None
         If not ``None``, seed used for state sampling.
+    trace : int or None, default=None
+        If not ``None``, record the value of ``obs`` at ``X`` every ``trace``
+        iteration.
+
+    Returns
+    -------
+    X : ndarray of shape (N, state_dim)
+        Batch of sampled states used throughout the iterations.
+    V_trace : list of ndarray
+        Sequence of observer evaluations on ``X`` across iterations.
+        ``V_trace[k]`` has shape ``(N, output_dim)`` and corresponds to
+        the observer output on ``X`` after iteration ``k - 1``.
 
     Notes
     -----
@@ -170,11 +183,20 @@ def data_koopman_eigen(
     """
     X = sys.sample(N, seed=seed)
 
-    for _ in range(max_iter):
+    V_trace = []
+
+    for k in range(max_iter):
+        if trace is not None and k % trace == 0:
+            V = obs.eval(X)
+            V_trace.append(V)
+
         Y = sys.next(X)
         V = obs.eval(Y)
 
         # Orthonormalize columns of V
         Q, _ = np.linalg.qr(V, mode="reduced")
+        V = Q * np.sqrt(N)
 
-        obs.fit(X, Q)
+        obs.fit(X, V)
+
+    return X, V_trace
