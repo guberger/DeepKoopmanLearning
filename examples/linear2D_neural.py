@@ -2,7 +2,7 @@ import argparse
 import numpy as np
 
 from src.linear_sys import LinearSystem
-from src.poly_obs import PolynomialObserver
+from src.neural_obs import NeuralObserver
 from src.koopman import data_koopman_eigen
 
 parser = argparse.ArgumentParser()
@@ -33,7 +33,19 @@ input_dim = state_dim
 output_dim = 3
 
 # Create observer
-obs = PolynomialObserver(input_dim, output_dim, degree=3, alpha=1e-4)
+obs = NeuralObserver(
+    input_dim,
+    output_dim,
+    hidden_dims=(64, 64),
+    activation="tanh",
+    lr=1e-3,
+    weight_decay=0.0,
+    batch_size=128,
+    epochs=100,
+    device=None,
+    dtype=np.float32,
+    seed=1,
+)
 
 # Initialize observer
 rng = np.random.default_rng(1)
