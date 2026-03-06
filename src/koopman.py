@@ -3,24 +3,27 @@ from __future__ import annotations
 import time
 import numpy as np
 
+from src.domains import AbstractDomain
 from src.systems import AbstractSystem
 from src.observers import AbstractObserver
 
 
 def koopman_modes(
+    dom: AbstractDomain,
     sys: AbstractSystem,
     obs: AbstractObserver,
     N: int,
     max_iter: int,
-    rec: int | None = None,
 ) -> np.ndarray:
     """
     Estimate Koopman eigenfunctions from data using a power-iteration scheme.
 
     Parameters
     ----------
+    dom : AbstractDomain
+        Samplable domain.
     sys : AbstractSystem
-        Generative model of the dynamical system.
+        Black-box dynamical system.
     obs : AbstractObserver
         Observer to be trained.
     N : int
@@ -34,6 +37,9 @@ def koopman_modes(
         Batch of sampled states used throughout the iterations.
     """
 
+    if dom.state_dim != sys.state_dim:
+        raise ValueError("Domaim and system state_dim must match.")
+
     if obs.input_dim != sys.state_dim:
         raise ValueError("Observer input_dim must match system state_dim.")
 
@@ -41,7 +47,7 @@ def koopman_modes(
         print(f"Iter {k}:")
         start_all = time.perf_counter()
 
-        X = sys.sample(N)
+        X = dom.sample(N)
         start = time.perf_counter()
         X_next = sys.next(X)
         end = time.perf_counter()
@@ -65,6 +71,7 @@ def koopman_modes(
 
 
 def koopman_operator(
+    dom: AbstractDomain,
     sys: AbstractSystem,
     obs: AbstractObserver,
     N: int,
@@ -83,10 +90,12 @@ def koopman_operator(
 
     Parameters
     ----------
+    dom : AbstractDomain
+        Samplable domain.
     sys : AbstractSystem
-        Dynamical system providing ``sample`` and ``next`` methods.
+        Black-box dynamical system.
     obs : AbstractObserver
-        Observer mapping states to feature space via ``obs.eval``.
+        Observer mapping states to features.
     N : int
         Number of sampled states.
 
@@ -100,10 +109,13 @@ def koopman_operator(
         Features at successors of sampled states.
     """
 
+    if dom.state_dim != sys.state_dim:
+        raise ValueError("Domaim and system state_dim must match.")
+
     if obs.input_dim != sys.state_dim:
         raise ValueError("Observer input_dim must match system state_dim.")
 
-    X = sys.sample(N)
+    X = dom.sample(N)
     X_next = sys.next(X)
     
     V = obs.eval(X)

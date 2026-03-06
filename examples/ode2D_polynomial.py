@@ -47,7 +47,7 @@ obs = PolynomialObserver(input_dim, output_dim, degree=4, alpha=1e-4)
 # Initialize observer
 rng = np.random.default_rng(1)
 N = 200
-X = sys.sample(N)
+X = dom.sample(N)
 
 # target: ``V[:, k] =
 #     cos(alpha * k * X[:, 0] + phi0) +
@@ -66,9 +66,9 @@ obs.fit(X, V)
 N = 500
 max_iter = 50
 
-X = koopman_modes(sys, obs, N, max_iter)
+X = koopman_modes(dom, sys, obs, N, max_iter)
 
-Kop, Vop, Vop_next = koopman_operator(sys, obs, N)
+Kop, Vop, Vop_next = koopman_operator(dom, sys, obs, N)
 print(Kop)
 print((Vop.T @ Vop) / N)
 print(np.linalg.norm(Vop_next - Vop @ Kop, axis=0) / np.sqrt(N))
@@ -107,7 +107,7 @@ if args.plot:
         # reshape grid evaluation
         Z = V_grid[:, j].reshape(n_grid, n_grid)
 
-        # contour plot of learned function
+        # surface plot of learned function
         ax.plot_surface(X1, X2, Z, linewidth=0, antialiased=True, alpha=0.85)
 
         # training samples

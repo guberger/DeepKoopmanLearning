@@ -17,7 +17,7 @@ args = parser.parse_args()
 # Define system dimension
 state_dim = 2
 
-# Define linear dynamics
+# Define dynamics
 def f(X: np.ndarray) -> np.ndarray:
     X0 = X[:, 0]
     X1 = X[:, 1]
@@ -26,7 +26,7 @@ def f(X: np.ndarray) -> np.ndarray:
     return np.column_stack([X0_next, X1_next])
 
 # Create system
-sys = DiscreteMapSystem(f, state_dim, seed=1234)
+sys = DiscreteMapSystem(f, state_dim)
 
 # -------------------------
 # Observer definition
@@ -43,13 +43,13 @@ obs = NeuralObserver(
     activation="tanh",
     lr=1e-3,
     epochs=800,
-    dtype=np.float32,
+    dtype="float32",
 )
 
 # Initialize observer
 rng = np.random.default_rng(1)
 N = 200
-X = sys.sample(N)
+X = dom.sample(N)
 
 # target: ``V[:, k] =
 #     cos(alpha * k * X[:, 0] + phi0) +
@@ -68,9 +68,9 @@ obs.fit(X, V)
 N = 500
 max_iter = 50
 
-X = koopman_modes(sys, obs, N, max_iter)
+X = koopman_modes(dom, sys, obs, N, max_iter)
 
-Kop, Vop, Vop_next = koopman_operator(sys, obs, N)
+Kop, Vop, Vop_next = koopman_operator(dom, sys, obs, N)
 print(Kop)
 print((Vop.T @ Vop) / N)
 print(np.linalg.norm(Vop_next - Vop @ Kop, axis=0) / np.sqrt(N))
@@ -109,7 +109,7 @@ if args.plot:
         # reshape grid evaluation
         Z = V_grid[:, j].reshape(n_grid, n_grid)
 
-        # contour plot of learned function
+        # surface plot of learned function
         ax.plot_surface(X1, X2, Z, linewidth=0, antialiased=True, alpha=0.85)
 
         # training samples

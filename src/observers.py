@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Literal
 from abc import ABC, abstractmethod
 import numpy as np
 from sklearn.pipeline import Pipeline
@@ -20,16 +21,10 @@ class AbstractObserver(ABC):
         Dimension of the input.
     output_dim : int
         Dimension of the output.
-    input_dtype : numpy.dtype
-        Floating dtype used for inputs.
-    output_dtype : numpy.dtype
-        Floating dtype used for outputs.
     """
 
     input_dim: int
     output_dim: int
-    input_dtype: np.dtype
-    output_dtype: np.dtype
 
     @abstractmethod
     def fit(self, X: np.ndarray, V: np.ndarray) -> None:
@@ -86,8 +81,6 @@ class PolynomialObserver(AbstractObserver):
     alpha : float, default=1e-6
         Ridge regularization strength. Set to ``0.0`` for (near)
         ordinary least squares.
-    dtype : numpy.dtype, default=np.float64
-        Floating dtype used for inputs and outputs.
     """
 
     def __init__(
@@ -97,12 +90,9 @@ class PolynomialObserver(AbstractObserver):
         degree: int = 2,
         *,
         alpha: float = 1e-6,
-        dtype: np.dtype = np.float64,
     ):
         self.input_dim = int(input_dim)
         self.output_dim = int(output_dim)
-        self.input_dtype = np.dtype(dtype)
-        self.output_dtype = np.dtype(dtype)
 
         self.degree = int(degree)
         self.alpha = float(alpha)
@@ -115,8 +105,8 @@ class PolynomialObserver(AbstractObserver):
         )
 
     def fit(self, X: np.ndarray, V: np.ndarray) -> None:
-        X = np.asarray(X, dtype=self.input_dtype)
-        V = np.asarray(V, dtype=self.output_dtype)
+        X = np.asarray(X)
+        V = np.asarray(V)
 
         if X.ndim != 2 or X.shape[1] != self.input_dim:
             raise ValueError(
@@ -131,14 +121,14 @@ class PolynomialObserver(AbstractObserver):
         self.model.fit(X, V)
 
     def eval(self, X: np.ndarray) -> np.ndarray:
-        X = np.asarray(X, dtype=self.input_dtype)
+        X = np.asarray(X)
 
         if X.ndim != 2 or X.shape[1] != self.input_dim:
             raise ValueError(
                 f"X must have shape (n_samples, {self.input_dim}), got {X.shape}."
             )
 
-        return np.asarray(self.model.predict(X), dtype=self.output_dtype)
+        return np.asarray(self.model.predict(X))
     
     
 class _MLP(nn.Module):
@@ -232,8 +222,8 @@ class NeuralObserver(AbstractObserver):
         Number of training epochs per call to ``fit``.
     device : {'cpu', 'cuda'} or None, default=None
         Device to use. If ``None``, selects ``'cuda'`` when available, else ``'cpu'``.
-    dtype : numpy.dtype, default=np.float32
-        Floating dtype used for inputs and outputs. Must be ``np.float32`` or ``np.float64``.
+    dtype :{"float32", "float64"}, default="float64"
+        Floating dtype used for torch tensors.
     seed : int or None, default=0
         Random seed for reproducibility. If ``None``, no seeding is performed.
     """
@@ -250,16 +240,13 @@ class NeuralObserver(AbstractObserver):
         batch_size: int | None = None,
         epochs: int = 200,
         device: str | None = None,
-        dtype: np.dtype = np.float32,
-        seed: int | None = None,
+        dtype: Literal["float32", "float64"] = "float32",
+        seed: int | None = 0,
     ):
         self.input_dim = int(input_dim)
         self.output_dim = int(output_dim)
-        self.input_dtype = np.dtype(dtype)
-        self.output_dtype = np.dtype(dtype)
 
         if seed is not None:
-            np.random.seed(seed)
             torch.manual_seed(seed)
 
         if device is None:
@@ -267,12 +254,12 @@ class NeuralObserver(AbstractObserver):
         self.device = torch.device(device)
 
         # Match torch dtype to numpy dtype
-        if self.input_dtype == np.dtype(np.float64):
+        if dtype == "float64":
             self.torch_dtype = torch.float64
-        elif self.input_dtype == np.dtype(np.float32):
+        elif dtype == "float32":
             self.torch_dtype = torch.float32
         else:
-            raise ValueError("dtype must be np.float32 or np.float64.")
+            raise ValueError("dtype must be 'float32' or 'float64'.")
 
         self.model = _MLP(
             self.input_dim, self.output_dim, hidden_dims, activation
@@ -293,8 +280,8 @@ class NeuralObserver(AbstractObserver):
         self.epochs = int(epochs)
 
     def fit(self, X: np.ndarray, V: np.ndarray) -> None:
-        X = np.asarray(X, dtype=self.input_dtype)
-        V = np.asarray(V, dtype=self.output_dtype)
+        X = np.asarray(X)
+        V = np.asarray(V)
 
         if X.ndim != 2 or X.shape[1] != self.input_dim:
             raise ValueError(f"X must have shape (n_samples, {self.input_dim}), got {X.shape}.")
@@ -338,13 +325,13 @@ class NeuralObserver(AbstractObserver):
 
     @torch.no_grad()
     def eval(self, X: np.ndarray) -> np.ndarray:
-        X = np.asarray(X, dtype=self.input_dtype)
+        X = np.asarray(X)
 
         if X.ndim != 2 or X.shape[1] != self.input_dim:
             raise ValueError(f"X must have shape (n_samples, {self.input_dim}), got {X.shape}.")
 
         self.model.eval()
         X_t = torch.as_tensor(X, dtype=self.torch_dtype, device=self.device)
-        Y_t = self.model(X_t)
+        V_t = self.model(X_t)
 
-        return Y_t.detach().cpu().numpy().astype(self.output_dtype, copy=False)
+        return V_t.detach().cpu().numpy()

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from typing import Final
 import argparse
 import numpy as np
 
-from src.domains import GaussianDomain
+from src.domains import UniformDomain
 from src.systems import DiscreteMapSystem
-from src.observers import NeuralObserver
+from src.observers import PolynomialObserver
 from src.koopman import koopman_modes, koopman_operator
 
 parser = argparse.ArgumentParser()
@@ -19,14 +20,11 @@ args = parser.parse_args()
 state_dim = 1
 
 # Create domain
-dom = GaussianDomain(state_dim, seed=1234)
+dom = UniformDomain(state_dim, low=-2.5, high=2.5, seed=1234)
 
-# Define linear dynamics
-A = np.array([[0.9]])
-b = np.array([0.1])
-
+# Define dynamics
 def f(X: np.ndarray) -> np.ndarray:
-    return X @ A.T + b
+    return 2 * np.tanh(X)
 
 # Create system
 sys = DiscreteMapSystem(f, state_dim)
@@ -39,15 +37,7 @@ input_dim = state_dim
 output_dim = 3
 
 # Create observer
-obs = NeuralObserver(
-    input_dim,
-    output_dim,
-    hidden_dims=(8, 8),
-    activation="tanh",
-    lr=1e-3,
-    epochs=800,
-    dtype="float32",
-)
+obs = PolynomialObserver(input_dim, output_dim, degree=3, alpha=1e-4)
 
 # Initialize observer
 rng = np.random.default_rng(1)
@@ -65,7 +55,7 @@ obs.fit(X, V)
 # -------------------------
 # Koopman iterations
 # -------------------------
-N = 500
+N = 1000
 max_iter = 50
 
 X = koopman_modes(dom, sys, obs, N, max_iter)
