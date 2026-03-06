@@ -1,7 +1,7 @@
-from src.koopman import data_koopman_eigen
+from src.koopman import koopman_modes
 
 print("Start tests koopman:")
 
-help(data_koopman_eigen)
+help(koopman_modes)
 
 print("Tests ok!")

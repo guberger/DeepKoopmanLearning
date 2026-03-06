@@ -11,18 +11,18 @@ args = parser.parse_args()
 
 print("Start tests neural_obs:")
 
+rng = np.random.default_rng(0)
+
 # -------------------------
 # Example 1 (input = 3, output = 2)
 # -------------------------
-rng = np.random.default_rng(0)
-
 N = 200
 input_dim = 3
 output_dim = 2
 
 X = rng.normal(size=(N, input_dim))
 
-# target: V = [1, 1] x0^2 + [0.5, -0.5] * x1 * x2 + [noise, noise]
+# target: ``V = [1, 1] x0^2 + [0.5, -0.5] * x1 * x2 + [noise, noise]``
 phi = np.column_stack([
     X[:, 0] ** 2,
     X[:, 1] * X[:, 2],
@@ -44,27 +44,24 @@ obs = NeuralObserver(
     epochs=400,
     device=None,  # auto: "cuda" if available else "cpu"
     dtype=np.float32,
-    seed=0,
 )
 obs.fit(X, V)
 V_hat = obs.eval(X)
 
 rmse = np.sqrt(np.mean((V_hat - V) ** 2, axis=0))
 print("Example 1 RMSE per component:", rmse)
-assert np.all(rmse < 0.5)
+assert np.all(rmse < 0.2)
 
 # -------------------------
 # Example 2 (input = 1, output = 2) + plotting
 # -------------------------
-rng = np.random.default_rng(1)
-
 N = 200
 input_dim = 1
 output_dim = 2
 
 X = rng.normal(size=(N, input_dim))
 
-# target: V = [1, 1] x^2 + [0.5, -0.5] * x + [noise, noise]
+# target: ``V = [1, 1] x^2 + [0.5, -0.5] * x + [noise, noise]``
 phi = np.column_stack([
     X[:, 0] ** 2,
     X[:, 0],
@@ -83,17 +80,16 @@ obs = NeuralObserver(
     lr=1e-3,
     weight_decay=0.0,
     batch_size=128,
-    epochs=800,      # a bit more to make the curve smoother in 1D
+    epochs=400,
     device=None,
     dtype=np.float32,
-    seed=1,
 )
 obs.fit(X, V)
 V_hat = obs.eval(X)
 
 rmse = np.sqrt(np.mean((V_hat - V) ** 2, axis=0))
 print("Example 2 RMSE per component:", rmse)
-assert np.all(rmse < 0.5)
+assert np.all(rmse < 0.2)
 
 print("Tests ok!")
 
@@ -106,7 +102,10 @@ if args.plot:
     X_grid = np.linspace(X.min(), X.max(), 400)[:, None]
     V_pred = obs.eval(X_grid)
 
-    fig, axes = plt.subplots(1, 2, figsize=(10, 4), sharex=True)
+    fig, axes = plt.subplots(1, output_dim, figsize=(10, 4), sharex=True)
+
+    if output_dim == 1:
+        axes = [axes]
 
     for j in range(output_dim):
         ax = axes[j]

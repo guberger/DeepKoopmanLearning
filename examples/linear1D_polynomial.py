@@ -5,7 +5,7 @@ import numpy as np
 
 from src.systems import DiscreteMapSystem
 from src.observers import PolynomialObserver
-from src.koopman import data_koopman_eigen
+from src.koopman import koopman_modes, koopman_operator
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--plot", action="store_true")
@@ -22,10 +22,10 @@ A = np.array([[0.9]])
 b = np.array([0.1])
 
 def f(X: np.ndarray) -> np.ndarray:
-    return X @ A + b
+    return X @ A.T + b
 
 # Create system
-sys = DiscreteMapSystem(f, state_dim)
+sys = DiscreteMapSystem(f, state_dim, seed=1234)
 
 # -------------------------
 # Observer definition
@@ -42,7 +42,7 @@ rng = np.random.default_rng(1)
 N = 200
 X = sys.sample(N)
 
-# target: V[:, k] = cos(alpha * k * X[:, 0] + phi) + noise
+# target: ``V[:, k] = cos(alpha * k * X[:, 0] + phi) + noise``
 X_ang = X @ (np.array([range(output_dim)]) * 1.5) + 1
 V = np.cos(X_ang) + 0.1 * rng.normal(size=(N, output_dim))
 Q, _ = np.linalg.qr(V, mode="reduced")
@@ -56,7 +56,12 @@ obs.fit(X, V)
 N = 500
 max_iter = 50
 
-X, V_rec = data_koopman_eigen(sys, obs, N, max_iter, rec=5)
+X = koopman_modes(sys, obs, N, max_iter)
+
+Kop, Vop, Vop_next = koopman_operator(sys, obs, N)
+print(Kop)
+print((Vop.T @ Vop) / N)
+print(np.linalg.norm(Vop_next - Vop @ Kop, axis=0) / np.sqrt(N))
 
 # ---- plotting ----
 
@@ -80,9 +85,6 @@ if args.plot:
 
         # training samples
         ax.scatter(X[:, 0], V[:, j], s=30, alpha=0.5)
-
-        for W in V_rec[:-1]:
-            ax.scatter(X[:, 0], W[:, j], s=20, alpha=0.5, edgecolors="none")
 
         # learned Koopman modes
         ax.plot(X_grid[:, 0], V_grid[:, j], linestyle="--", linewidth=2)

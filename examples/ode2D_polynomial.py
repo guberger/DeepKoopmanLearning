@@ -5,7 +5,7 @@ import numpy as np
 
 from src.systems import ODEDiscretizedSystem
 from src.observers import PolynomialObserver
-from src.koopman import data_koopman_eigen
+from src.koopman import koopman_modes, koopman_operator
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--plot", action="store_true")
@@ -31,6 +31,7 @@ sys = ODEDiscretizedSystem(
     state_dim=2,
     T=1.0,     # discrete map horizon
     dt=0.01,   # RK4 integration step
+    seed=1234,
 )
 
 # -------------------------
@@ -41,17 +42,16 @@ input_dim = state_dim
 output_dim = 3
 
 # Create observer
-obs = PolynomialObserver(input_dim, output_dim, degree=3, alpha=1e-4)
+obs = PolynomialObserver(input_dim, output_dim, degree=4, alpha=1e-4)
 
 # Initialize observer
 rng = np.random.default_rng(1)
 N = 200
 X = sys.sample(N)
 
-# target: V[:, k] =
-#     cos(alpha * k * X[:, 0] + phi0)
-#     + sin(alpha * k * X[:, 1] + phi1)
-#     + noise
+# target: ``V[:, k] =
+#     cos(alpha * k * X[:, 0] + phi0) +
+#     sin(alpha * k * X[:, 1] + phi1) + noise``
 X0_ang = X[:, [0]] @ (np.array([range(output_dim)]) * 1.5) + 1
 X1_ang = X[:, [1]] @ (np.array([range(output_dim)]) * 1.5) - 1
 V = np.cos(X0_ang) + np.sin(X1_ang) + 0.1 * rng.normal(size=(N, output_dim))
@@ -66,7 +66,12 @@ obs.fit(X, V)
 N = 500
 max_iter = 50
 
-X, V_rec = data_koopman_eigen(sys, obs, N, max_iter, rec=5)
+X = koopman_modes(sys, obs, N, max_iter)
+
+Kop, Vop, Vop_next = koopman_operator(sys, obs, N)
+print(Kop)
+print((Vop.T @ Vop) / N)
+print(np.linalg.norm(Vop_next - Vop @ Kop, axis=0) / np.sqrt(N))
 
 # ---- plotting ----
 
@@ -114,16 +119,6 @@ if args.plot:
             alpha=0.5,
             edgecolors="none",
         )
-
-        for W in V_rec[:-1]:
-            ax.scatter(
-                X[:, 0],
-                X[:, 1],
-                W[:, j],
-                s=10,
-                alpha=0.2,
-                edgecolors="none",
-            )
 
         ax.set_title(f"Output {j}")
         ax.set_xlabel("x1")

@@ -27,10 +27,10 @@ def f(X: np.ndarray) -> np.ndarray:
     return np.column_stack([X0_next, X1_next])
 
 # Create system
-sys = DiscreteMapSystem(f, state_dim)
+sys = DiscreteMapSystem(f, state_dim, seed=0)
 
 # Sample initial states
-X0 = sys.sample(N=5, seed=0)
+X0 = sys.sample(N=5)
 
 print("Initial states:")
 print(X0)
@@ -48,7 +48,7 @@ if args.plot:
 
     # Simulate trajectory
     T = 30
-    X = sys.sample(1, seed=1)   # shape (1, state_dim)
+    X = sys.sample(1)   # shape (1, state_dim)
 
     traj = [X[0]]
     for _ in range(T):

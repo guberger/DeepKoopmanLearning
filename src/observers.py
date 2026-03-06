@@ -226,10 +226,10 @@ class NeuralObserver(AbstractObserver):
         Learning rate for the optimizer.
     weight_decay : float, default=0.0
         Weight decay (L2 regularization) used by AdamW.
-    batch_size : int, default=256
-        Training batch size.
+    batch_size : int or None, default=None
+        Training batch size. If ``None``, no full-bacth training.
     epochs : int, default=200
-        Number of training epochs per call to :meth:`fit`.
+        Number of training epochs per call to ``fit``.
     device : {'cpu', 'cuda'} or None, default=None
         Device to use. If ``None``, selects ``'cuda'`` when available, else ``'cpu'``.
     dtype : numpy.dtype, default=np.float32
@@ -247,11 +247,11 @@ class NeuralObserver(AbstractObserver):
         activation: str = "tanh",
         lr: float = 1e-3,
         weight_decay: float = 0.0,
-        batch_size: int = 256,
+        batch_size: int | None = None,
         epochs: int = 200,
         device: str | None = None,
         dtype: np.dtype = np.float32,
-        seed: int | None = 0,
+        seed: int | None = None,
     ):
         self.input_dim = int(input_dim)
         self.output_dim = int(output_dim)
@@ -272,7 +272,7 @@ class NeuralObserver(AbstractObserver):
         elif self.input_dtype == np.dtype(np.float32):
             self.torch_dtype = torch.float32
         else:
-            raise ValueError(f"dtype must be {np.float32} or {np.float64}, got {dtype}.")
+            raise ValueError("dtype must be np.float32 or np.float64.")
 
         self.model = _MLP(
             self.input_dim, self.output_dim, hidden_dims, activation
@@ -285,7 +285,11 @@ class NeuralObserver(AbstractObserver):
             self.model.parameters(), lr=lr, weight_decay=weight_decay
         )
 
-        self.batch_size = int(batch_size)
+        if batch_size is not None:
+            self.batch_size = int(batch_size)
+        else:
+            self.batch_size = None
+
         self.epochs = int(epochs)
 
     def fit(self, X: np.ndarray, V: np.ndarray) -> None:
@@ -294,16 +298,21 @@ class NeuralObserver(AbstractObserver):
 
         if X.ndim != 2 or X.shape[1] != self.input_dim:
             raise ValueError(f"X must have shape (n_samples, {self.input_dim}), got {X.shape}.")
-
         if V.ndim != 2 or V.shape[1] != self.output_dim:
             raise ValueError(f"V must have shape (n_samples, {self.output_dim}), got {V.shape}.")
 
         X_t = torch.as_tensor(X, dtype=self.torch_dtype, device=self.device)
         V_t = torch.as_tensor(V, dtype=self.torch_dtype, device=self.device)
 
+        if self.batch_size is None:
+            self._fit_full(X_t, V_t)
+        else:
+            self._fit_batch(X_t, V_t)
+
+    def _fit_batch(self, X_t: torch.Tensor, V_t: torch.Tensor) -> None:
         loader = DataLoader(
             TensorDataset(X_t, V_t),
-            batch_size=min(self.batch_size, X.shape[0]),
+            batch_size=min(self.batch_size, X_t.shape[0]),
             shuffle=True,
             drop_last=False,
         )
@@ -317,6 +326,15 @@ class NeuralObserver(AbstractObserver):
                 self.optimizer.zero_grad(set_to_none=True)
                 loss.backward()
                 self.optimizer.step()
+
+    def _fit_full(self, X_t: torch.Tensor, V_t: torch.Tensor) -> None:
+        self.model.train()
+        for _ in range(self.epochs):
+            self.optimizer.zero_grad(set_to_none=True)
+            pred = self.model(X_t)
+            loss = self.loss_fn(pred, V_t)
+            loss.backward()
+            self.optimizer.step()
 
     @torch.no_grad()
     def eval(self, X: np.ndarray) -> np.ndarray:

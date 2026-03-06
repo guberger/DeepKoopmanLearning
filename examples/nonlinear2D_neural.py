@@ -5,7 +5,7 @@ import numpy as np
 
 from src.systems import DiscreteMapSystem
 from src.observers import NeuralObserver
-from src.koopman import data_koopman_eigen
+from src.koopman import koopman_modes, koopman_operator
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--plot", action="store_true")
@@ -26,7 +26,7 @@ def f(X: np.ndarray) -> np.ndarray:
     return np.column_stack([X0_next, X1_next])
 
 # Create system
-sys = DiscreteMapSystem(f, state_dim)
+sys = DiscreteMapSystem(f, state_dim, seed=1234)
 
 # -------------------------
 # Observer definition
@@ -39,15 +39,11 @@ output_dim = 3
 obs = NeuralObserver(
     input_dim,
     output_dim,
-    hidden_dims=(64, 64),
+    hidden_dims=(8, 8),
     activation="tanh",
     lr=1e-3,
-    weight_decay=0.0,
-    batch_size=128,
-    epochs=100,
-    device=None,
+    epochs=800,
     dtype=np.float32,
-    seed=1,
 )
 
 # Initialize observer
@@ -55,10 +51,9 @@ rng = np.random.default_rng(1)
 N = 200
 X = sys.sample(N)
 
-# target: V[:, k] =
-#     cos(alpha * k * X[:, 0] + phi0)
-#     + sin(alpha * k * X[:, 1] + phi1)
-#     + noise
+# target: ``V[:, k] =
+#     cos(alpha * k * X[:, 0] + phi0) +
+#     sin(alpha * k * X[:, 1] + phi1) + noise``
 X0_ang = X[:, [0]] @ (np.array([range(output_dim)]) * 1.5) + 1
 X1_ang = X[:, [1]] @ (np.array([range(output_dim)]) * 1.5) - 1
 V = np.cos(X0_ang) + np.sin(X1_ang) + 0.1 * rng.normal(size=(N, output_dim))
@@ -73,7 +68,12 @@ obs.fit(X, V)
 N = 500
 max_iter = 50
 
-X, V_rec = data_koopman_eigen(sys, obs, N, max_iter, rec=5)
+X = koopman_modes(sys, obs, N, max_iter)
+
+Kop, Vop, Vop_next = koopman_operator(sys, obs, N)
+print(Kop)
+print((Vop.T @ Vop) / N)
+print(np.linalg.norm(Vop_next - Vop @ Kop, axis=0) / np.sqrt(N))
 
 # ---- plotting ----
 
@@ -121,16 +121,6 @@ if args.plot:
             alpha=0.5,
             edgecolors="none",
         )
-
-        for W in V_rec[:-1]:
-            ax.scatter(
-                X[:, 0],
-                X[:, 1],
-                W[:, j],
-                s=10,
-                alpha=0.2,
-                edgecolors="none",
-            )
 
         ax.set_title(f"Output {j}")
         ax.set_xlabel("x1")

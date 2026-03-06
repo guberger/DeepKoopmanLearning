@@ -21,7 +21,7 @@ class AbstractSystem(ABC):
     dtype: np.dtype
 
     @abstractmethod
-    def sample(self, N: int, seed: int | None = None) -> np.ndarray:
+    def sample(self, N: int) -> np.ndarray:
         """
         Sample a batch of (initial) states.
 
@@ -29,8 +29,6 @@ class AbstractSystem(ABC):
         ----------
         N : int
             Number of states to sample.
-        seed : int or None, default=None
-            If not ``None``, seed used for sampling.
 
         Returns
         -------
@@ -81,6 +79,8 @@ class DiscreteMapSystem(AbstractSystem):
         Standard deviation of the Gaussian distribution used by ``sample``.
     dtype : numpy.dtype, default=np.float64
         Floating dtype used for returned arrays.
+    seed : int or None, default=None
+        If not ``None``, seed used for sampling.
     """
 
     def __init__(
@@ -90,11 +90,13 @@ class DiscreteMapSystem(AbstractSystem):
         init_mean: np.ndarray | None = None,
         init_std: float = 1.0,
         dtype: np.dtype = np.float64,
+        seed: int | None = None,
     ) -> None:
 
         self.f = f
         self.state_dim = state_dim
         self.dtype = np.dtype(dtype)
+        self.rng = np.random.default_rng(seed)
 
         if init_mean is None:
             self.init_mean = np.zeros(state_dim, dtype=self.dtype)
@@ -105,9 +107,8 @@ class DiscreteMapSystem(AbstractSystem):
             raise ValueError("init_std must be >= 0.")
         self.init_std = float(init_std)
 
-    def sample(self, N: int, seed: int | None = None) -> np.ndarray:
-        rng = np.random.default_rng(seed)
-        X = rng.normal(self.init_mean, self.init_std, size=(N, self.state_dim))
+    def sample(self, N: int) -> np.ndarray:
+        X = self.rng.normal(self.init_mean, self.init_std, size=(N, self.state_dim))
         return X.astype(self.dtype, copy=False)
 
     def next(self, X: np.ndarray) -> np.ndarray:
@@ -148,6 +149,8 @@ class ODEDiscretizedSystem(AbstractSystem):
         Standard deviation of the Gaussian distribution used by ``sample``.
     dtype : numpy.dtype, default=np.float64
         Floating dtype used for returned arrays.
+    seed : int or None, default=None
+        If not ``None``, seed used for sampling.
     """
 
     def __init__(
@@ -160,6 +163,7 @@ class ODEDiscretizedSystem(AbstractSystem):
         init_mean: np.ndarray | None = None,
         init_std: float = 1.0,
         dtype: np.dtype = np.float64,
+        seed: int | None = None,
     ) -> None:
 
         self.f = f
@@ -168,6 +172,7 @@ class ODEDiscretizedSystem(AbstractSystem):
         self.dt = float(dt)
         self.method = method
         self.dtype = np.dtype(dtype)
+        self.rng = np.random.default_rng(seed)
 
         if self.T <= 0:
             raise ValueError("T must be positive.")
@@ -186,9 +191,8 @@ class ODEDiscretizedSystem(AbstractSystem):
             raise ValueError("init_std must be >= 0.")
         self.init_std = float(init_std)
 
-    def sample(self, N: int, seed: int | None = None) -> np.ndarray:
-        rng = np.random.default_rng(seed)
-        X = rng.normal(self.init_mean, self.init_std, size=(N, self.state_dim))
+    def sample(self, N: int) -> np.ndarray:
+        X = self.rng.normal(self.init_mean, self.init_std, size=(N, self.state_dim))
         return X.astype(self.dtype, copy=False)
 
     def next(self, X: np.ndarray) -> np.ndarray:

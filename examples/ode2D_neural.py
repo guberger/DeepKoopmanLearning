@@ -3,8 +3,8 @@ from __future__ import annotations
 import argparse
 import numpy as np
 
-from src.systems import DiscreteMapSystem
-from src.observers import PolynomialObserver
+from src.systems import ODEDiscretizedSystem
+from src.observers import NeuralObserver
 from src.koopman import koopman_modes, koopman_operator
 
 parser = argparse.ArgumentParser()
@@ -17,16 +17,22 @@ args = parser.parse_args()
 # Define system dimension
 state_dim = 2
 
-# Define linear dynamics
+# Define dynamics
 def f(X: np.ndarray) -> np.ndarray:
     X0 = X[:, 0]
     X1 = X[:, 1]
-    X0_next = 0.9 * X0
-    X1_next = 0.8 * X1 + (0.8 - 0.9**2) * X0**2
-    return np.column_stack([X0_next, X1_next])
+    dX0 = X1
+    dX1 = 0.1 * X1 - X0 - 0.5 * X1**3
+    return np.column_stack([dX0, dX1])
 
 # Create system
-sys = DiscreteMapSystem(f, state_dim, seed=1234)
+sys = ODEDiscretizedSystem(
+    f=f,
+    state_dim=2,
+    T=1.0,     # discrete map horizon
+    dt=0.01,   # RK4 integration step
+    seed=1234,
+)
 
 # -------------------------
 # Observer definition
@@ -36,7 +42,15 @@ input_dim = state_dim
 output_dim = 3
 
 # Create observer
-obs = PolynomialObserver(input_dim, output_dim, degree=3, alpha=1e-4)
+obs = NeuralObserver(
+    input_dim,
+    output_dim,
+    hidden_dims=(8, 8),
+    activation="tanh",
+    lr=1e-3,
+    epochs=800,
+    dtype=np.float32,
+)
 
 # Initialize observer
 rng = np.random.default_rng(1)
