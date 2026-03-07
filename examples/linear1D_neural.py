@@ -26,6 +26,7 @@ A = np.array([[0.9]])
 b = np.array([0.1])
 
 def f(X: np.ndarray) -> np.ndarray:
+    return 0.9 * np.tanh(X)
     return X @ A.T + b
 
 # Create system

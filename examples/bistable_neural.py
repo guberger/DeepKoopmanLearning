@@ -41,9 +41,10 @@ output_dim = 3
 obs = NeuralObserver(
     input_dim,
     output_dim,
-    hidden_dims=(64, 64),
+    hidden_dims=(8, 8),
     activation="tanh",
     lr=1e-3,
+    weight_decay=1e-3,
     epochs=800,
     dtype="float32",
 )
