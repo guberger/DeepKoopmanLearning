@@ -53,7 +53,6 @@ elif args.neural:
         activation="tanh",
         lr=1e-3,
         epochs=800,
-        dtype="float32",
     )
 else:
     raise ValueError("No observer defined")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Literal
 from abc import ABC, abstractmethod
 import numpy as np
 
@@ -12,9 +13,12 @@ class AbstractDomain(ABC):
     ----------
     state_dim : int
         Dimension of the state space.
+    dtype : {'float32', 'float64'}, default='float64'
+        Floating dtype used for numpy arrays.
     """
 
     state_dim: int
+    dtype: np.dtype
 
     @abstractmethod
     def sample(self, N: int) -> np.ndarray:
@@ -48,6 +52,8 @@ class GaussianDomain(AbstractDomain):
         Standard deviation of the Gaussian distribution.
     seed : int or None, default=None
         If not ``None``, seed used for sampling.
+    dtype : {'float32', 'float64'}, default='float64'
+        Floating dtype used for numpy arrays.
     """
 
     def __init__(
@@ -55,11 +61,20 @@ class GaussianDomain(AbstractDomain):
         state_dim: int,
         init_mean: np.ndarray | None = None,
         init_std: float = 1.0,
+        *,
         seed: int | None = None,
+        dtype: Literal["float32", "float64"] = "float64",
     ) -> None:
 
         self.state_dim = state_dim
         self.rng = np.random.default_rng(seed)
+
+        if dtype == "float64":
+            self.dtype = np.float64
+        elif dtype == "float32":
+            self.dtype = np.float32
+        else:
+            raise ValueError("dtype must be 'float32' or 'float64'.")
 
         if init_mean is None:
             init_mean = 0.0
@@ -73,7 +88,9 @@ class GaussianDomain(AbstractDomain):
         self.init_std = float(init_std)
 
     def sample(self, N: int) -> np.ndarray:
-        return self.rng.normal(self.init_mean, self.init_std, size=(N, self.state_dim))
+        return self.rng.normal(
+            self.init_mean, self.init_std, size=(N, self.state_dim)
+        ).astype(self.dtype, copy=False)
     
 class UniformDomain(AbstractDomain):
     """
@@ -91,6 +108,8 @@ class UniformDomain(AbstractDomain):
         If not provided, +1 is used for all dimensions.
     seed : int or None, default=None
         If not ``None``, seed used for sampling.
+    dtype : {'float32', 'float64'}, default='float64'
+        Floating dtype used for numpy arrays.
     """
 
     def __init__(
@@ -98,11 +117,20 @@ class UniformDomain(AbstractDomain):
         state_dim: int,
         low: float | np.ndarray | None = None,
         high: float | np.ndarray | None = None,
+        *,
         seed: int | None = None,
+        dtype: Literal["float32", "float64"] = "float64",
     ) -> None:
 
         self.state_dim = state_dim
         self.rng = np.random.default_rng(seed)
+
+        if dtype == "float64":
+            self.dtype = np.float64
+        elif dtype == "float32":
+            self.dtype = np.float32
+        else:
+            raise ValueError("dtype must be 'float32' or 'float64'.")
 
         if low is None:
             low = -1.0
@@ -120,4 +148,6 @@ class UniformDomain(AbstractDomain):
             raise ValueError("Each element of high must be greater than low.")
 
     def sample(self, N: int) -> np.ndarray:
-        return self.rng.uniform(self.low, self.high, size=(N, self.state_dim))
+        return self.rng.uniform(
+            self.low, self.high, size=(N, self.state_dim)
+        ).astype(self.dtype, copy=False)

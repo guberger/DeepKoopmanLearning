@@ -21,45 +21,10 @@ class AbstractObserver(ABC):
         Dimension of the input.
     output_dim : int
         Dimension of the output.
-    dtype: np.dtype
-        Floating dtype used for numpy arrays.
     """
 
     input_dim: int
     output_dim: int
-    dtype: np.dtype
-
-    def _validate_fit_inputs(
-        self, X: np.ndarray, V: np.ndarray
-    ) -> tuple[np.ndarray, np.ndarray]:
-        X = np.asarray(X, dtype=self.dtype)
-        V = np.asarray(V, dtype=self.dtype)
-
-        if X.ndim != 2 or X.shape[1] != self.input_dim:
-            raise ValueError(
-                f"X must have shape (n_samples, {self.input_dim}), got {X.shape}."
-            )
-        if V.ndim != 2 or V.shape[1] != self.output_dim:
-            raise ValueError(
-                f"V must have shape (n_samples, {self.output_dim}), got {V.shape}."
-            )
-        if X.shape[0] != V.shape[0]:
-            raise ValueError(
-                f"X and V must have the same number of samples, "
-                f"got {X.shape[0]} and {V.shape[0]}."
-            )
-
-        return X, V
-
-    def _validate_eval_input(self, X: np.ndarray) -> np.ndarray:
-        X = np.asarray(X, dtype=self.dtype)
-
-        if X.ndim != 2 or X.shape[1] != self.input_dim:
-            raise ValueError(
-                f"X must have shape (n_samples, {self.input_dim}), got {X.shape}."
-            )
-
-        return X
 
     @abstractmethod
     def fit(self, X: np.ndarray, V: np.ndarray) -> None:
@@ -116,8 +81,6 @@ class PolynomialObserver(AbstractObserver):
     alpha : float, default=1e-6
         Ridge regularization strength. Set to ``0.0`` for (near)
         ordinary least squares.
-    dtype : {'float32', 'float64'}, default='float64'
-        Floating dtype used for numpy arrays.
     """
 
     def __init__(
@@ -127,17 +90,9 @@ class PolynomialObserver(AbstractObserver):
         degree: int = 2,
         *,
         alpha: float = 1e-6,
-        dtype: Literal["float32", "float64"] = "float64",
     ):
         self.input_dim = int(input_dim)
         self.output_dim = int(output_dim)
-
-        if dtype == "float64":
-            self.dtype = np.float64
-        elif dtype == "float32":
-            self.dtype = np.float32
-        else:
-            raise ValueError("dtype must be 'float32' or 'float64'.")
 
         self.degree = int(degree)
         self.alpha = float(alpha)
@@ -150,12 +105,30 @@ class PolynomialObserver(AbstractObserver):
         )
 
     def fit(self, X: np.ndarray, V: np.ndarray) -> None:
-        X, V = self._validate_fit_inputs(X, V)
+        X = np.asarray(X)
+        V = np.asarray(V)
+
+        if X.ndim != 2 or X.shape[1] != self.input_dim:
+            raise ValueError(
+                f"X must have shape (n_samples, {self.input_dim}), got {X.shape}."
+            )
+
+        if V.ndim != 2 or V.shape[1] != self.output_dim:
+            raise ValueError(
+                f"V must have shape (n_samples, {self.output_dim}), got {V.shape}."
+            )
+
         self.model.fit(X, V)
 
     def eval(self, X: np.ndarray) -> np.ndarray:
-        X = self._validate_eval_input(X)
-        return self.model.predict(X).astype(self.dtype, copy=False)
+        X = np.asarray(X)
+
+        if X.ndim != 2 or X.shape[1] != self.input_dim:
+            raise ValueError(
+                f"X must have shape (n_samples, {self.input_dim}), got {X.shape}."
+            )
+
+        return np.asarray(self.model.predict(X))
     
     
 class _MLP(nn.Module):
@@ -236,7 +209,7 @@ class NeuralObserver(AbstractObserver):
     output_dim : int
         Dimension of the observable output.
     hidden_dims : tuple of int, default=(64, 64)
-        Hidden layer sizes of the MLP.
+        Hidden layer sizes of each MLP.
     activation : {'tanh', 'relu', 'gelu'}, default='tanh'
         Activation function used between linear layers.
     lr : float, default=1e-3
@@ -244,13 +217,13 @@ class NeuralObserver(AbstractObserver):
     weight_decay : float, default=0.0
         Weight decay (L2 regularization) used by AdamW.
     batch_size : int or None, default=None
-        Training batch size. If ``None``, full-batch training is used.
+        Training batch size. If ``None``, no full-bacth training.
     epochs : int, default=200
         Number of training epochs per call to ``fit``.
     device : {'cpu', 'cuda'} or None, default=None
         Device to use. If ``None``, selects ``'cuda'`` when available, else ``'cpu'``.
-    dtype : {'float32', 'float64'}, default='float64'
-        Floating dtype used for numpy arrays and torch tensors.
+    dtype :{"float32", "float64"}, default="float64"
+        Floating dtype used for torch tensors.
     seed : int or None, default=0
         Random seed for reproducibility. If ``None``, no seeding is performed.
     """
@@ -267,40 +240,37 @@ class NeuralObserver(AbstractObserver):
         batch_size: int | None = None,
         epochs: int = 200,
         device: str | None = None,
-        dtype: Literal["float32", "float64"] = "float64",
+        dtype: Literal["float32", "float64"] = "float32",
         seed: int | None = 0,
     ):
         self.input_dim = int(input_dim)
         self.output_dim = int(output_dim)
 
-        if dtype == "float64":
-            self.dtype = np.float64
-            self.torch_dtype = torch.float64
-        elif dtype == "float32":
-            self.dtype = np.float64
-            self.torch_dtype = torch.float32
-        else:
-            raise ValueError("dtype must be 'float32' or 'float64'.")
-
         if seed is not None:
             torch.manual_seed(seed)
-            if torch.cuda.is_available():
-                torch.cuda.manual_seed_all(seed)
 
         if device is None:
             device = "cuda" if torch.cuda.is_available() else "cpu"
         self.device = torch.device(device)
 
-        self.model = _MLP(
-            self.input_dim, self.output_dim, hidden_dims, activation
+        # Match torch dtype to numpy dtype
+        if dtype == "float64":
+            self.torch_dtype = torch.float64
+        elif dtype == "float32":
+            self.torch_dtype = torch.float32
+        else:
+            raise ValueError("dtype must be 'float32' or 'float64'.")
+
+        self.models = [_MLP(
+            self.input_dim, 1, hidden_dims, activation
         ).to(
             device=self.device, dtype=self.torch_dtype
-        )
+        ) for _ in range(self.output_dim)]
 
         self.loss_fn = nn.MSELoss()
-        self.optimizer = torch.optim.AdamW(
-            self.model.parameters(), lr=lr, weight_decay=weight_decay
-        )
+        self.optimizers = [torch.optim.AdamW(
+            model.parameters(), lr=lr, weight_decay=weight_decay
+        ) for model in self.models]
 
         if batch_size is not None:
             self.batch_size = int(batch_size)
@@ -310,46 +280,65 @@ class NeuralObserver(AbstractObserver):
         self.epochs = int(epochs)
 
     def fit(self, X: np.ndarray, V: np.ndarray) -> None:
-        X, V = self._validate_fit_inputs(X, V)
+        X = np.asarray(X)
+        V = np.asarray(V)
+
+        if X.ndim != 2 or X.shape[1] != self.input_dim:
+            raise ValueError(f"X must have shape (n_samples, {self.input_dim}), got {X.shape}.")
+        if V.ndim != 2 or V.shape[1] != self.output_dim:
+            raise ValueError(f"V must have shape (n_samples, {self.output_dim}), got {V.shape}.")
+
         X_t = torch.as_tensor(X, dtype=self.torch_dtype, device=self.device)
-        V_t = torch.as_tensor(V, dtype=self.torch_dtype, device=self.device)
+        vs_t = [torch.as_tensor(
+            V[:, i:i+1], dtype=self.torch_dtype, device=self.device
+        ) for i in range(self.output_dim)]
 
         if self.batch_size is None:
-            self._fit_full(X_t, V_t)
+            self._fit_full(X_t, vs_t)
         else:
-            self._fit_batch(X_t, V_t)
+            self._fit_batch(X_t, vs_t)
 
-    def _fit_batch(self, X_t: torch.Tensor, V_t: torch.Tensor) -> None:
-        loader = DataLoader(
-            TensorDataset(X_t, V_t),
-            batch_size=min(self.batch_size, X_t.shape[0]),
-            shuffle=True,
-            drop_last=False,
-        )
+    def _fit_batch(self, X_t: torch.Tensor, vs_t: list[torch.Tensor]) -> None:
+        for (model, optimizer, v_t) in zip(self.models, self.optimizers, vs_t):
+            loader = DataLoader(
+                TensorDataset(X_t, v_t),
+                batch_size=min(self.batch_size, X_t.shape[0]),
+                shuffle=True,
+                drop_last=False,
+            )
+            model.train()
+            for _ in range(self.epochs):
+                for xb, vb in loader:
+                    pred = model(xb)
+                    loss = self.loss_fn(pred, vb)
 
-        self.model.train()
-        for _ in range(self.epochs):
-            for xb, vb in loader:
-                self.optimizer.zero_grad(set_to_none=True)
-                pred = self.model(xb)
-                loss = self.loss_fn(pred, vb)
+                    optimizer.zero_grad(set_to_none=True)
+                    loss.backward()
+                    optimizer.step()
+
+    def _fit_full(self, X_t: torch.Tensor, vs_t: list[torch.Tensor]) -> None:
+        for (model, optimizer, v_t) in zip(self.models, self.optimizers, vs_t):
+            model.train()
+            for _ in range(self.epochs):
+                optimizer.zero_grad(set_to_none=True)
+                pred = model(X_t)
+                loss = self.loss_fn(pred, v_t)
                 loss.backward()
-                self.optimizer.step()
-
-    def _fit_full(self, X_t: torch.Tensor, V_t: torch.Tensor) -> None:
-        self.model.train()
-        for _ in range(self.epochs):
-            self.optimizer.zero_grad(set_to_none=True)
-            pred = self.model(X_t)
-            loss = self.loss_fn(pred, V_t)
-            loss.backward()
-            self.optimizer.step()
+                optimizer.step()
 
     @torch.no_grad()
     def eval(self, X: np.ndarray) -> np.ndarray:
-        X = self._validate_eval_input(X)
-        self.model.eval()
-        X_t = torch.as_tensor(X, dtype=self.torch_dtype, device=self.device)
-        V_t = self.model(X_t)
+        X = np.asarray(X)
 
-        return V_t.cpu().numpy().astype(self.dtype, copy=False)
+        if X.ndim != 2 or X.shape[1] != self.input_dim:
+            raise ValueError(f"X must have shape (n_samples, {self.input_dim}), got {X.shape}.")
+
+        X_t = torch.as_tensor(X, dtype=self.torch_dtype, device=self.device)
+
+        V = np.zeros((X.shape[0], self.output_dim))
+
+        for i, model in enumerate(self.models):
+            model.eval()
+            V[:, i] = model(X_t).squeeze(-1).cpu().numpy()
+
+        return V
