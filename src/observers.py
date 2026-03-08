@@ -243,8 +243,6 @@ class NeuralObserver(AbstractObserver):
         Learning rate for the optimizer.
     weight_decay : float, default=0.0
         Weight decay (L2 regularization) used by AdamW.
-    batch_size : int or None, default=None
-        Training batch size. If ``None``, full-batch training is used.
     epochs : int, default=200
         Number of training epochs per call to ``fit``.
     device : {'cpu', 'cuda'} or None, default=None
@@ -264,7 +262,6 @@ class NeuralObserver(AbstractObserver):
         activation: str = "tanh",
         lr: float = 1e-3,
         weight_decay: float = 0.0,
-        batch_size: int | None = None,
         epochs: int = 200,
         device: str | None = None,
         dtype: Literal["float32", "float64"] = "float64",
@@ -302,11 +299,6 @@ class NeuralObserver(AbstractObserver):
             self.model.parameters(), lr=lr, weight_decay=weight_decay
         )
 
-        if batch_size is not None:
-            self.batch_size = int(batch_size)
-        else:
-            self.batch_size = None
-
         self.epochs = int(epochs)
 
     def fit(self, X: np.ndarray, V: np.ndarray) -> None:
@@ -314,29 +306,6 @@ class NeuralObserver(AbstractObserver):
         X_t = torch.as_tensor(X, dtype=self.torch_dtype, device=self.device)
         V_t = torch.as_tensor(V, dtype=self.torch_dtype, device=self.device)
 
-        if self.batch_size is None:
-            self._fit_full(X_t, V_t)
-        else:
-            self._fit_batch(X_t, V_t)
-
-    def _fit_batch(self, X_t: torch.Tensor, V_t: torch.Tensor) -> None:
-        loader = DataLoader(
-            TensorDataset(X_t, V_t),
-            batch_size=min(self.batch_size, X_t.shape[0]),
-            shuffle=True,
-            drop_last=False,
-        )
-
-        self.model.train()
-        for _ in range(self.epochs):
-            for xb, vb in loader:
-                self.optimizer.zero_grad(set_to_none=True)
-                pred = self.model(xb)
-                loss = self.loss_fn(pred, vb)
-                loss.backward()
-                self.optimizer.step()
-
-    def _fit_full(self, X_t: torch.Tensor, V_t: torch.Tensor) -> None:
         self.model.train()
         for _ in range(self.epochs):
             self.optimizer.zero_grad(set_to_none=True)
