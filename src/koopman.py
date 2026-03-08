@@ -14,7 +14,7 @@ def koopman_modes(
     obs: AbstractObserver,
     N: int,
     max_iter: int,
-) -> np.ndarray:
+) -> None:
     """
     Estimate Koopman eigenfunctions from data using a power-iteration scheme.
 
@@ -30,11 +30,6 @@ def koopman_modes(
         Number of sampled states.
     max_iter : int
         Maximum number of iterations.
-
-    Returns
-    -------
-    X : ndarray of shape (N, sys.state_dim)
-        Batch of sampled states used throughout the iterations.
     """
 
     if dom.state_dim != sys.state_dim:
@@ -66,8 +61,6 @@ def koopman_modes(
 
         end_all = time.perf_counter()
         print(f"  Total time: {end_all - start_all:.3f} seconds")
-
-    return X
 
 
 def koopman_operator(

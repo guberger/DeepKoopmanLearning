@@ -11,7 +11,7 @@ print("Start tests observers:")
 
 rng = np.random.default_rng(0)
 
-N = 200
+N = 2000
 input_dim = 2
 output_dim = 2
 
