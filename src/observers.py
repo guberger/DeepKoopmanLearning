@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from itertools import product
 from typing import Literal
 from abc import ABC, abstractmethod
 import numpy as np
@@ -92,6 +93,98 @@ class AbstractObserver(ABC):
         """
         raise NotImplementedError
 
+
+class MonomialObserver(AbstractObserver):
+    """
+    Observer that returns the monomial basis up to a given total degree.
+
+    For x = (x_1, ..., x_n), the observer returns all monomials
+
+        x_1^a1 * x_2^a2 * ... * x_n^an
+
+    such that
+
+        a1 + a2 + ... + an <= degree.
+
+    Parameters
+    ----------
+    input_dim : int
+        Dimension of the input space.
+    degree : int, default=2
+        Maximum total degree of the monomial basis.
+    include_bias : bool, default=False
+        Whether to include the constant monomial 1.
+    dtype : {'float32', 'float64'}, default='float64'
+        Floating dtype used for numpy arrays.
+    """
+
+    def __init__(
+        self,
+        input_dim: int,
+        degree: int = 2,
+        *,
+        dtype: Literal["float32", "float64"] = "float64",
+    ):
+        self.input_dim = int(input_dim)
+        self.degree = int(degree)
+
+        if dtype == "float64":
+            self.dtype = np.float64
+        elif dtype == "float32":
+            self.dtype = np.float32
+        else:
+            raise ValueError("dtype must be 'float32' or 'float64'.")
+
+        if self.input_dim <= 0:
+            raise ValueError("input_dim must be positive.")
+        if self.degree < 0:
+            raise ValueError("degree must be nonnegative.")
+
+        self.exponents = self._build_exponents()
+        self.output_dim = self.exponents.shape[0]
+
+    def _build_exponents(self) -> np.ndarray:
+        """
+        Build all exponent vectors (a1, ..., an) with degree <= self.degree.
+        """
+        exponents = []
+
+        for powers in product(range(self.degree + 1), repeat=self.input_dim):
+            total_degree = sum(powers)
+            if total_degree <= self.degree:
+                exponents.append(powers)
+
+        # Order by total degree, then lexicographically
+        exponents.sort(key=lambda p: (sum(p), p))
+        return np.asarray(exponents, dtype=np.int64)
+    
+    def fit(self, X: np.ndarray, V: np.ndarray) -> None:
+        pass
+    
+    def eval(self, X: np.ndarray) -> np.ndarray:
+        """
+        Evaluate the monomial basis on input samples.
+
+        Parameters
+        ----------
+        X : np.ndarray, shape (n_samples, input_dim) or (input_dim,)
+            Input samples.
+
+        Returns
+        -------
+        V : np.ndarray, shape (n_samples, output_dim)
+            Monomial features evaluated at X.
+        """
+        X = self._validate_eval_input(X).astype(self.dtype, copy=False)
+
+        n_samples = X.shape[0]
+        V = np.ones((n_samples, self.output_dim), dtype=self.dtype)
+
+        for j, exp in enumerate(self.exponents):
+            V[:, j] = np.prod(X ** exp, axis=1)
+
+        return V
+    
 
 class PolynomialObserver(AbstractObserver):
     """

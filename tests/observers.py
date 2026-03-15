@@ -1,7 +1,7 @@
 import argparse
 import numpy as np
 
-from src.observers import PolynomialObserver, NeuralObserver
+from src.observers import MonomialObserver, PolynomialObserver, NeuralObserver
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--plot", action="store_true")
@@ -41,6 +41,7 @@ obs1 = NeuralObserver(
     epochs=800,
     dtype="float64",
 )
+obs2 = MonomialObserver(input_dim)
 
 # Fit observers
 obs0.fit(X, V)
@@ -69,10 +70,12 @@ if args.plot:
     
     V0_grid = obs0.eval(X_grid)
     V1_grid = obs1.eval(X_grid)
-    Vs_grid = [V0_grid, V1_grid]
+    features = np.random.choice(obs2.output_dim, size=output_dim, replace=False)
+    V2_grid = obs2.eval(X_grid)[:, features]
+    Vs_grid = [V0_grid, V1_grid, V2_grid]
 
     fig, axes = plt.subplots(
-        2, output_dim,
+        len(Vs_grid), output_dim,
         figsize=(12, 7),
         subplot_kw={"projection": "3d"},
     )
@@ -83,7 +86,7 @@ if args.plot:
     vmin = np.min(V)
     vmax = np.max(V)
 
-    for i in range(2):
+    for i in range(axes.shape[0]):
         for j in range(output_dim):
 
             ax = axes[i, j]

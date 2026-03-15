@@ -5,13 +5,14 @@ import numpy as np
 
 from src.domains import GaussianDomain
 from src.systems import DiscreteMapSystem
-from src.observers import PolynomialObserver, NeuralObserver
+from src.observers import MonomialObserver, PolynomialObserver, NeuralObserver
 from src.koopman import koopman_modes, koopman_operator
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--plot", action="store_true")
 parser.add_argument("--polynomial", action="store_true")
 parser.add_argument("--neural", action="store_true")
+parser.add_argument("--edmd", action="store_true")
 args = parser.parse_args()
 
 # -------------------------
@@ -31,7 +32,7 @@ sys = DiscreteMapSystem(f, dom.state_dim)
 # Observer definition
 # -------------------------
 # Define observer dimensions
-output_dim = 4
+output_dim = 3
 
 # Create observer
 if args.polynomial:
@@ -50,21 +51,27 @@ elif args.neural:
         lr=1e-3,
         epochs=800,
     )
+elif args.edmd:
+    obs = MonomialObserver(
+        dom.state_dim,
+        degree=6,
+    )
 else:
     raise ValueError("No observer defined")
 
 # Initialize observer
-rng = np.random.default_rng(1)
-N = 2000
-X = dom.sample(N)
+if not args.edmd:
+    rng = np.random.default_rng(1)
+    N = 2500
+    X = dom.sample(N)
 
-# target: ``V[:, k] = cos(alpha * k * X[:, 0] + phi) + noise``
-X_ang = X @ (np.array([range(output_dim)]) * 1.5) + 1
-V = np.cos(X_ang) + 0.1 * rng.normal(size=(N, output_dim))
-Q, _ = np.linalg.qr(V, mode="reduced")
-V = Q * np.sqrt(N)
+    # target: ``V[:, k] = cos(alpha * k * X[:, 0] + phi) + noise``
+    X_ang = X @ (np.array([range(output_dim)]) * 1.5) + 1
+    V = np.cos(X_ang) + 0.1 * rng.normal(size=(N, output_dim))
+    Q, _ = np.linalg.qr(V, mode="reduced")
+    V = Q * np.sqrt(N)
 
-obs.fit(X, V)
+    obs.fit(X, V)
 
 # -------------------------
 # Koopman iterations
@@ -72,25 +79,31 @@ obs.fit(X, V)
 N = 2500
 max_iter = 50
 
-koopman_modes(dom, sys, obs, N, max_iter)
+if not args.edmd:
+    koopman_modes(dom, sys, obs, N, max_iter)
 
 print("Koopman regression:")
 Kop, Vop, Vop_next = koopman_operator(dom, sys, obs, N)
 print((Vop.T @ Vop) / N)
 print(np.linalg.norm(Vop_next - Vop @ Kop, axis=0) / np.sqrt(N))
 print("Koopman modes error:")
-evals, EVECS = np.linalg.eig(Kop)
-print(evals)
+eigvals, eigvecs = np.linalg.eig(Kop)
+idx = np.argsort(np.abs(eigvals))[::-1][0:output_dim]
+eigvals = eigvals[idx]
+eigvecs = eigvecs[:, idx]
+print(eigvals)
 X = dom.sample(N)
 X_next = sys.next(X)
 V = obs.eval(X)
 V_next = obs.eval(X_next)
-num = np.linalg.norm(V_next @ EVECS - V @ EVECS * evals, axis=0)
-den = np.linalg.norm(V @ EVECS, axis=0)
+num = np.linalg.norm(V_next @ (eigvecs / eigvals) - V @ eigvecs, axis=0)
+den = np.linalg.norm(V @ eigvecs, axis=0)
 print(num / den)
 
 # ---- plotting ----
 
 if args.plot:
-    from examples.utils import plot_learned_function
-    plot_learned_function(obs, X)
+    from examples.utils import plot_learned_function, plt
+    fig = plot_learned_function(sys, obs, eigvals, eigvecs, X)
+    plt.show()
+    fig.savefig("tanh_1d.png", dpi=300)
