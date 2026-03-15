@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import numpy as np
 
-from src.domains import GaussianDomain
+from src.domains import UniformDomain
 from src.systems import ODEDiscretizedSystem
 from src.observers import MonomialObserver, PolynomialObserver, NeuralObserver
 from src.koopman import koopman_modes, koopman_operator
@@ -19,7 +19,9 @@ args = parser.parse_args()
 # System definition
 # -------------------------
 # Create domain
-dom = GaussianDomain(2, seed=1234)
+dom = UniformDomain(
+    2, np.array([-4, -4]), np.array([4, 4]), seed=1234
+)
 
 # Define dynamics
 def f(X: np.ndarray) -> np.ndarray:
@@ -50,10 +52,10 @@ elif args.neural:
     obs = NeuralObserver(
         dom.state_dim,
         output_dim,
-        hidden_dims=(16, 16),
+        hidden_dims=(64, 64),
         activation="tanh",
         lr=1e-3,
-        epochs=1600,
+        epochs=800,
         dtype="float32",
     )
 elif args.edmd:
@@ -67,7 +69,7 @@ else:
 # Initialize observer
 if not args.edmd:
     rng = np.random.default_rng(1)
-    N = 2500
+    N = 10_000
     X = dom.sample(N)
 
     # target: ``V[:, k] =
@@ -78,6 +80,17 @@ if not args.edmd:
     V = np.cos(X0_ang) + np.sin(X1_ang) + 0.1 * rng.normal(size=(N, output_dim))
     Q, _ = np.linalg.qr(V, mode="reduced")
     V = Q * np.sqrt(N)
+
+    centers = np.array([
+        [-1.0, 0.0],
+        [+1.0, 0.0],
+    ])
+    V = np.zeros_like(X)
+    for (i, x) in enumerate(X):
+        if np.linalg.norm(x - centers[0, :]) < 0.8:
+            V[i, 0] = +1.0
+        if np.linalg.norm(x - centers[1, :]) < 0.8:
+            V[i, 1] = -1.0
 
     obs.fit(X, V)
 
@@ -96,6 +109,7 @@ print((Vop.T @ Vop) / N)
 print(np.linalg.norm(Vop_next - Vop @ Kop, axis=0) / np.sqrt(N))
 print("Koopman modes error:")
 eigvals, eigvecs = np.linalg.eig(Kop)
+eigvals, eigvecs = np.linalg.eig(np.eye(2))
 idx = np.argsort(np.abs(eigvals))[::-1][0:output_dim]
 eigvals = eigvals[idx]
 eigvecs = eigvecs[:, idx]
@@ -112,6 +126,8 @@ print(num / den)
 
 if args.plot:
     from examples.utils import plot_learned_function, plt
-    fig = plot_learned_function(sys, obs, eigvals, eigvecs, X)
+    fig = plot_learned_function(
+        sys, obs, eigvals, eigvecs, X, plot_sample=False
+    )
     plt.show()
     fig.savefig("duffing.png", dpi=300)

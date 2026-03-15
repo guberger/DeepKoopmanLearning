@@ -10,11 +10,17 @@ def plot_learned_function(
     eigvals: np.ndarray,
     eigvecs: np.ndarray,
     X: np.ndarray,
+    *,
+    plot_sample: bool = True,
 ):
     if obs.input_dim == 1:
-        return _plot_function_1d(sys, obs, eigvals, eigvecs, X)
+        return _plot_function_1d(
+            sys, obs, eigvals, eigvecs, X, plot_sample=plot_sample
+        )
     elif obs.input_dim == 2:
-        return _plot_function_2d(sys, obs, eigvals, eigvecs, X)
+        return _plot_function_2d(
+            sys, obs, eigvals, eigvecs, X, plot_sample=plot_sample
+        )
     else:
         raise NotImplementedError
 
@@ -72,7 +78,7 @@ def _plot_function_2d(
     eigvecs: np.ndarray,
     X: np.ndarray,
     *,
-    plot_sample: bool = False,
+    plot_sample: bool = True,
 ):
     # Smooth grid for plotting the learned function
     n_grid = 100
