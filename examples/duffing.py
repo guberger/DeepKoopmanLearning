@@ -53,7 +53,7 @@ elif args.neural:
         hidden_dims=(16, 16),
         activation="tanh",
         lr=1e-3,
-        epochs=800,
+        epochs=1600,
         dtype="float32",
     )
 elif args.edmd:
@@ -66,21 +66,8 @@ else:
 
 # Initialize observer
 if not args.edmd:
-    # N = 2000
-    # X = dom.sample(N)
-
-    # centers = np.array([
-    #     [-1.0, 0.0],
-    #     [+1.0, 0.0],
-    # ])
-    # # Compute pairwise distances
-    # dists = np.linalg.norm(X[:, None, :] - centers[None, :, :], axis=2)
-    # V = np.maximum(0.0, 1.0 - dists)
-
-    # obs.fit(X, V)
-
     rng = np.random.default_rng(1)
-    N = 2000
+    N = 2500
     X = dom.sample(N)
 
     # target: ``V[:, k] =
@@ -97,7 +84,7 @@ if not args.edmd:
 # -------------------------
 # Koopman iterations
 # -------------------------
-N = 2500
+N = 10_000
 max_iter = 50
 
 if not args.edmd:
