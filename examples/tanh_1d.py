@@ -39,7 +39,7 @@ if args.polynomial:
     obs = PolynomialObserver(
         dom.state_dim,
         output_dim,
-        degree=3,
+        degree=6,
         alpha=1e-4
     )
 elif args.neural:
@@ -54,7 +54,7 @@ elif args.neural:
 elif args.edmd:
     obs = MonomialObserver(
         dom.state_dim,
-        degree=6,
+        degree=3,
     )
 else:
     raise ValueError("No observer defined")

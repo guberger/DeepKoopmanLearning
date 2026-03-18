@@ -56,7 +56,6 @@ elif args.neural:
         activation="tanh",
         lr=1e-3,
         epochs=800,
-        dtype="float32",
     )
 elif args.edmd:
     obs = MonomialObserver(
@@ -109,7 +108,6 @@ print((Vop.T @ Vop) / N)
 print(np.linalg.norm(Vop_next - Vop @ Kop, axis=0) / np.sqrt(N))
 print("Koopman modes error:")
 eigvals, eigvecs = np.linalg.eig(Kop)
-eigvals, eigvecs = np.linalg.eig(np.eye(2))
 idx = np.argsort(np.abs(eigvals))[::-1][0:output_dim]
 eigvals = eigvals[idx]
 eigvecs = eigvecs[:, idx]

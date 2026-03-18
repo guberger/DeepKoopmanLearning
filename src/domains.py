@@ -80,7 +80,7 @@ class GaussianDomain(AbstractDomain):
             init_mean = 0.0
 
         self.init_mean = np.broadcast_to(
-            np.asarray(init_mean), (state_dim,)
+            np.asarray(init_mean), (self.state_dim,)
         )
 
         if init_std < 0.0:
@@ -100,12 +100,10 @@ class UniformDomain(AbstractDomain):
     ----------
     state_dim : int
         Dimension of the state space.
-    low : float or ndarray of shape (state_dim,), optional
+    low : float or ndarray of shape (state_dim,), default=-1.0
         Lower bounds of the domain.
-        If not provided, -1 is used for all dimensions.
-    high : float or ndarray of shape (state_dim,), optional
+    high : float or ndarray of shape (state_dim,), default=+1.0
         Upper bounds of the domain.
-        If not provided, +1 is used for all dimensions.
     seed : int or None, default=None
         If not ``None``, seed used for sampling.
     dtype : {'float32', 'float64'}, default='float64'
@@ -115,8 +113,8 @@ class UniformDomain(AbstractDomain):
     def __init__(
         self,
         state_dim: int,
-        low: float | np.ndarray | None = None,
-        high: float | np.ndarray | None = None,
+        low: float | np.ndarray = -1.0,
+        high: float | np.ndarray = +1.0,
         *,
         seed: int | None = None,
         dtype: Literal["float32", "float64"] = "float64",
@@ -132,16 +130,11 @@ class UniformDomain(AbstractDomain):
         else:
             raise ValueError("dtype must be 'float32' or 'float64'.")
 
-        if low is None:
-            low = -1.0
-        if high is None:
-            high = 1.0
-
         self.low = np.broadcast_to(
-            np.asarray(low), (state_dim,)
+            np.asarray(low), (self.state_dim,)
         )
         self.high = np.broadcast_to(
-            np.asarray(high), (state_dim,)
+            np.asarray(high), (self.state_dim,)
         )
 
         if np.any(self.high <= self.low):

@@ -38,11 +38,11 @@ class AbstractObserver(ABC):
 
         if X.ndim != 2 or X.shape[1] != self.input_dim:
             raise ValueError(
-                f"X must have shape (n_samples, {self.input_dim}), got {X.shape}."
+                f"X must have shape (N, {self.input_dim}), got {X.shape}."
             )
         if V.ndim != 2 or V.shape[1] != self.output_dim:
             raise ValueError(
-                f"V must have shape (n_samples, {self.output_dim}), got {V.shape}."
+                f"V must have shape (N, {self.output_dim}), got {V.shape}."
             )
         if X.shape[0] != V.shape[0]:
             raise ValueError(
@@ -57,7 +57,7 @@ class AbstractObserver(ABC):
 
         if X.ndim != 2 or X.shape[1] != self.input_dim:
             raise ValueError(
-                f"X must have shape (n_samples, {self.input_dim}), got {X.shape}."
+                f"X must have shape (N, {self.input_dim}), got {X.shape}."
             )
 
         return X
@@ -98,13 +98,13 @@ class MonomialObserver(AbstractObserver):
     """
     Observer that returns the monomial basis up to a given total degree.
 
-    For x = (x_1, ..., x_n), the observer returns all monomials
+    For ``x = (x_1, ..., x_n)'', the observer returns all monomials
 
-        x_1^a1 * x_2^a2 * ... * x_n^an
+        ``x_1^a1 * x_2^a2 * ... * x_n^an''
 
     such that
 
-        a1 + a2 + ... + an <= degree.
+        ``a1 + a2 + ... + an <= degree.''
 
     Parameters
     ----------
@@ -112,8 +112,6 @@ class MonomialObserver(AbstractObserver):
         Dimension of the input space.
     degree : int, default=2
         Maximum total degree of the monomial basis.
-    include_bias : bool, default=False
-        Whether to include the constant monomial 1.
     dtype : {'float32', 'float64'}, default='float64'
         Floating dtype used for numpy arrays.
     """
@@ -144,9 +142,6 @@ class MonomialObserver(AbstractObserver):
         self.output_dim = self.exponents.shape[0]
 
     def _build_exponents(self) -> np.ndarray:
-        """
-        Build all exponent vectors (a1, ..., an) with degree <= self.degree.
-        """
         exponents = []
 
         for powers in product(range(self.degree + 1), repeat=self.input_dim):
@@ -162,28 +157,15 @@ class MonomialObserver(AbstractObserver):
         pass
     
     def eval(self, X: np.ndarray) -> np.ndarray:
-        """
-        Evaluate the monomial basis on input samples.
+        X = self._validate_eval_input(X)
 
-        Parameters
-        ----------
-        X : np.ndarray, shape (n_samples, input_dim) or (input_dim,)
-            Input samples.
-
-        Returns
-        -------
-        V : np.ndarray, shape (n_samples, output_dim)
-            Monomial features evaluated at X.
-        """
-        X = self._validate_eval_input(X).astype(self.dtype, copy=False)
-
-        n_samples = X.shape[0]
-        V = np.ones((n_samples, self.output_dim), dtype=self.dtype)
+        N = X.shape[0]
+        V = np.ones((N, self.output_dim), dtype=self.dtype)
 
         for j, exp in enumerate(self.exponents):
             V[:, j] = np.prod(X ** exp, axis=1)
 
-        return V
+        return V.astype(self.dtype, copy=False)
     
 
 class PolynomialObserver(AbstractObserver):
@@ -297,17 +279,13 @@ class _MLP(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
-        Forward pass.
-
         Parameters
         ----------
         x : torch.Tensor of shape (N, input_dim)
-            Input batch.
 
         Returns
         -------
         y : torch.Tensor of shape (N, output_dim)
-            Output batch.
         """
         return self.net(x)
 
