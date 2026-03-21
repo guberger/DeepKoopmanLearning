@@ -12,14 +12,22 @@ def plot_learned_function(
     X: np.ndarray,
     *,
     plot_sample: bool = True,
+    V_min: np.ndarray | None = None,
+    V_max: np.ndarray | None = None,
 ):
     if obs.input_dim == 1:
         return _plot_function_1d(
-            sys, obs, eigvals, eigvecs, X, plot_sample=plot_sample
+            sys, obs, eigvals, eigvecs, X,
+            plot_sample=plot_sample,
+            V_min=V_min,
+            V_max=V_max,
         )
     elif obs.input_dim == 2:
         return _plot_function_2d(
-            sys, obs, eigvals, eigvecs, X, plot_sample=plot_sample
+            sys, obs, eigvals, eigvecs, X,
+            plot_sample=plot_sample,
+            V_min=V_min,
+            V_max=V_max,
         )
     else:
         raise NotImplementedError
@@ -32,6 +40,8 @@ def _plot_function_1d(
     X: np.ndarray,
     *,
     plot_sample: bool = True,
+    V_min: np.ndarray | None = None,
+    V_max: np.ndarray | None = None,
 ):
     # Smooth grid for plotting the learned function
     X_grid = np.linspace(X.min(), X.max(), 400)[:, None]
@@ -39,6 +49,14 @@ def _plot_function_1d(
     V_grid = obs.eval(X_grid)
     V_grid_next = obs.eval(X_grid_next)
     n_mode = len(eigvals)
+
+    if V_min is not None:
+        V_grid = np.maximum(V_grid, V_min)
+        V_grid_next = np.maximum(V_grid_next, V_min)
+    
+    if V_max is not None:
+        V_grid = np.minimum(V_grid, V_max)
+        V_grid_next = np.minimum(V_grid_next, V_max)
 
     fig, axes = plt.subplots(1, n_mode, figsize=(10, 4), sharex=True)
 
@@ -79,6 +97,8 @@ def _plot_function_2d(
     X: np.ndarray,
     *,
     plot_sample: bool = True,
+    V_min: np.ndarray | None = None,
+    V_max: np.ndarray | None = None,
 ):
     # Smooth grid for plotting the learned function
     n_grid = 100
@@ -91,6 +111,15 @@ def _plot_function_2d(
     V_grid = obs.eval(X_grid)
     V_grid_next = obs.eval(X_grid_next)
     n_mode = len(eigvals)
+
+    if V_min is not None:
+        V_grid = np.maximum(V_grid, V_min)
+        V_grid_next = np.maximum(V_grid_next, V_min)
+    
+    if V_max is not None:
+        V_grid = np.minimum(V_grid, V_max)
+        V_grid_next = np.minimum(V_grid_next, V_max)
+
 
     fig, axes = plt.subplots(2, n_mode, figsize=(12, 7), sharex=True)
 

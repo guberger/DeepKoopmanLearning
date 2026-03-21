@@ -14,6 +14,8 @@ def koopman_modes(
     obs: AbstractObserver,
     N: int,
     max_iter: int,
+    *,
+    X_fixed: np.ndarray | None = None,
 ) -> None:
     """
     Estimate Koopman eigenfunctions from data using a power-iteration scheme.
@@ -43,6 +45,10 @@ def koopman_modes(
         start_all = time.perf_counter()
 
         X = dom.sample(N)
+
+        if X_fixed is not None:
+            X = np.vstack((X, X_fixed))
+
         start = time.perf_counter()
         X_next = sys.next(X)
         end = time.perf_counter()
@@ -52,7 +58,7 @@ def koopman_modes(
 
         # Orthonormalize columns of ``V``
         Q, _ = np.linalg.qr(V, mode="reduced")
-        V = Q * np.sqrt(N)
+        V = Q * np.sqrt(X.shape[0])
 
         start = time.perf_counter()
         obs.fit(X, V)
@@ -68,6 +74,8 @@ def koopman_operator(
     sys: AbstractSystem,
     obs: AbstractObserver,
     N: int,
+    *,
+    X_fixed: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Estimate the Koopman operator ``K`` using least squares.
@@ -109,6 +117,10 @@ def koopman_operator(
         raise ValueError("Observer input_dim must match system state_dim.")
 
     X = dom.sample(N)
+
+    if X_fixed is not None:
+        X = np.vstack((X, X_fixed))
+
     X_next = sys.next(X)
     
     V = obs.eval(X)
