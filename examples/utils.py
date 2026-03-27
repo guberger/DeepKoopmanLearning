@@ -11,24 +11,12 @@ def plot_learned_function(
     eigvecs: np.ndarray,
     X: np.ndarray,
     *,
-    plot_sample: bool = True,
-    V_min: np.ndarray | None = None,
-    V_max: np.ndarray | None = None,
+    sample: bool = False,
 ):
     if obs.input_dim == 1:
-        return _plot_function_1d(
-            sys, obs, eigvals, eigvecs, X,
-            plot_sample=plot_sample,
-            V_min=V_min,
-            V_max=V_max,
-        )
+        return _plot_function_1d(sys, obs, eigvals, eigvecs, X, sample)
     elif obs.input_dim == 2:
-        return _plot_function_2d(
-            sys, obs, eigvals, eigvecs, X,
-            plot_sample=plot_sample,
-            V_min=V_min,
-            V_max=V_max,
-        )
+        return _plot_function_2d(sys, obs, eigvals, eigvecs, X, sample)
     else:
         raise NotImplementedError
 
@@ -38,10 +26,7 @@ def _plot_function_1d(
     eigvals: np.ndarray,
     eigvecs: np.ndarray,
     X: np.ndarray,
-    *,
-    plot_sample: bool = True,
-    V_min: np.ndarray | None = None,
-    V_max: np.ndarray | None = None,
+    sample: bool,
 ):
     # Smooth grid for plotting the learned function
     X_grid = np.linspace(X.min(), X.max(), 400)[:, None]
@@ -49,14 +34,6 @@ def _plot_function_1d(
     V_grid = obs.eval(X_grid)
     V_grid_next = obs.eval(X_grid_next)
     n_mode = len(eigvals)
-
-    if V_min is not None:
-        V_grid = np.maximum(V_grid, V_min)
-        V_grid_next = np.maximum(V_grid_next, V_min)
-    
-    if V_max is not None:
-        V_grid = np.minimum(V_grid, V_max)
-        V_grid_next = np.minimum(V_grid_next, V_max)
 
     fig, axes = plt.subplots(1, n_mode, figsize=(10, 4), sharex=True)
 
@@ -70,7 +47,7 @@ def _plot_function_1d(
         G = V_grid @ eigvec
         G_next = V_grid_next @ (eigvec / eigval)
 
-        if plot_sample:
+        if sample:
             ax.scatter(
                 X[:, 0], np.zeros(X.shape[0]),
                 c="green", s=10, alpha=0.2,
@@ -95,10 +72,7 @@ def _plot_function_2d(
     eigvals: np.ndarray,
     eigvecs: np.ndarray,
     X: np.ndarray,
-    *,
-    plot_sample: bool = True,
-    V_min: np.ndarray | None = None,
-    V_max: np.ndarray | None = None,
+    sample: bool,
 ):
     # Smooth grid for plotting the learned function
     n_grid = 100
@@ -111,15 +85,6 @@ def _plot_function_2d(
     V_grid = obs.eval(X_grid)
     V_grid_next = obs.eval(X_grid_next)
     n_mode = len(eigvals)
-
-    if V_min is not None:
-        V_grid = np.maximum(V_grid, V_min)
-        V_grid_next = np.maximum(V_grid_next, V_min)
-    
-    if V_max is not None:
-        V_grid = np.minimum(V_grid, V_max)
-        V_grid_next = np.minimum(V_grid_next, V_max)
-
 
     fig, axes = plt.subplots(2, n_mode, figsize=(12, 7), sharex=True)
 
@@ -142,14 +107,20 @@ def _plot_function_2d(
         cf_next = ax_next.contourf(X1, X2, Z_next)
         plt.colorbar(cf_next, ax=ax_next)
 
-        if plot_sample:
+        if sample:
             ax.scatter(
                 X[:, 0], X[:, 1],
+                c="black", s=5, alpha=0.2,
+            )
+            X_next = sys.next(X)
+            ax_next.scatter(
+                X_next[:, 0], X_next[:, 1],
                 c="black", s=5, alpha=0.2,
             )
 
         ax.set_title(f"Mode {j}")
         ax_next.set_xlabel("x1")
+        ax.set_xlabel("x1")
         if j == 0:
             ax.set_ylabel("x2")
             ax_next.set_ylabel("x2")

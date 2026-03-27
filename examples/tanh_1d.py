@@ -40,7 +40,7 @@ if args.polynomial:
         dom.state_dim,
         output_dim,
         degree=6,
-        alpha=1e-4
+        alpha=1e-4,
     )
 elif args.neural:
     obs = NeuralObserver(
@@ -61,16 +61,18 @@ else:
 
 # Initialize observer
 if not args.edmd:
-    rng = np.random.default_rng(1)
     N = 2500
     X = dom.sample(N)
 
-    # target: ``V[:, k] = cos(alpha * k * X[:, 0] + phi) + noise``
-    X_ang = X @ (np.array([range(output_dim)]) * 1.5) + 1
-    V = np.cos(X_ang) + 0.1 * rng.normal(size=(N, output_dim))
+    # initialize if polynomial
+    if args.polynomial:
+        rng = np.random.default_rng(1)
+        V_init = rng.normal(size=X.shape)
+        obs.fit(X, V_init)
+    
+    V = obs.eval(X)
     Q, _ = np.linalg.qr(V, mode="reduced")
     V = Q * np.sqrt(N)
-
     obs.fit(X, V)
 
 # -------------------------
@@ -88,6 +90,7 @@ print((Vop.T @ Vop) / N)
 print(np.linalg.norm(Vop_next - Vop @ Kop, axis=0) / np.sqrt(N))
 print("Koopman modes error:")
 eigvals, eigvecs = np.linalg.eig(Kop)
+# eigvals, eigvecs = np.linalg.eig(np.eye(output_dim))
 idx = np.argsort(np.abs(eigvals))[::-1][0:output_dim]
 eigvals = eigvals[idx]
 eigvecs = eigvecs[:, idx]
@@ -106,4 +109,4 @@ if args.plot:
     from examples.utils import plot_learned_function, plt
     fig = plot_learned_function(sys, obs, eigvals, eigvecs, X)
     plt.show()
-    fig.savefig("tanh_1d.png", dpi=300)
+    fig.savefig("figures/tanh_1d.png", dpi=300)

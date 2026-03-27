@@ -20,7 +20,7 @@ args = parser.parse_args()
 # -------------------------
 # Create domain
 dom = UniformDomain(
-    2, np.array([-4, -4]), np.array([4, 4]), seed=1234
+    2, np.array([-4, -4]), np.array([4, 4]), seed=1234,
 )
 
 # Define dynamics
@@ -45,8 +45,8 @@ if args.polynomial:
     obs = PolynomialObserver(
         dom.state_dim,
         output_dim,
-        degree=3,
-        alpha=1e-4
+        degree=6,
+        alpha=1e-4,
     )
 elif args.neural:
     obs = NeuralObserver(
@@ -60,35 +60,33 @@ elif args.neural:
 elif args.edmd:
     obs = MonomialObserver(
         dom.state_dim,
-        degree=3,
+        degree=6,
     )
 else:
     raise ValueError("No observer defined")
 
 # Initialize observer
 if not args.edmd:
-    rng = np.random.default_rng(1)
     N = 10_000
     X = dom.sample(N)
 
-    centers = np.array([
-        [-1.0, 0.0],
-        [+1.0, 0.0],
-    ])
-    V = np.zeros_like(X)
-    for (i, x) in enumerate(X):
-        if np.linalg.norm(x - centers[0, :]) < 0.8:
-            V[i, 0] = +1.0
-        if np.linalg.norm(x - centers[1, :]) < 0.8:
-            V[i, 1] = -1.0
+    # initialize if polynomial
+    if args.polynomial:
+        rng = np.random.default_rng(1)
+        V_init = rng.normal(size=X.shape)
+        obs.fit(X, V_init)
 
+    V = obs.eval(X)
+    V = V - np.mean(V, axis=0)
+    Q, _ = np.linalg.qr(V, mode="reduced")
+    V = Q * np.sqrt(N)
     obs.fit(X, V)
 
 # -------------------------
 # Koopman iterations #1
 # -------------------------
 N = 10_000
-max_iter = 5
+max_iter = 50
 
 if not args.edmd:
     koopman_modes(dom, sys, obs, N, max_iter)
@@ -111,64 +109,10 @@ num = np.linalg.norm(V_next @ (eigvecs / eigvals) - V @ eigvecs, axis=0)
 den = np.linalg.norm(V @ eigvecs, axis=0)
 print(num / den)
 
-v_dom = V @ (eigvecs[:, 0] / eigvals[0])
-mask = v_dom > v_dom.mean() + 0.5 * v_dom.std()
-X_filtered = X[mask]
-N_filtered = len(X_filtered)
-
-# -------------------------
-# Koopman iterations #2
-# -------------------------
-# Initialize observer
-if not args.edmd:
-    N = 10_000
-    X = dom.sample(N)
-    
-    centers = np.array([
-        [-1.0, 0.0],
-        [+1.0, 0.0],
-    ])
-    V = np.zeros_like(X)
-    for (i, x) in enumerate(X):
-        if np.linalg.norm(x - centers[0, :]) < 0.8:
-            V[i, 0] = +1.0
-        if np.linalg.norm(x - centers[1, :]) < 0.8:
-            V[i, 1] = -1.0
-
-    obs.fit(X, V)
-
-if not args.edmd:
-    koopman_modes(dom, sys, obs, 0, max_iter, X_fixed=X_filtered)
-
-print("Koopman regression:")
-Kop, Vop, Vop_next = koopman_operator(dom, sys, obs, 0, X_fixed=X_filtered)
-print((Vop.T @ Vop) / N_filtered)
-print(np.linalg.norm(Vop_next - Vop @ Kop, axis=0) / np.sqrt(N_filtered))
-print("Koopman modes error:")
-eigvals, eigvecs = np.linalg.eig(Kop)
-idx = np.argsort(np.abs(eigvals))[::-1][0:output_dim]
-eigvals = eigvals[idx]
-eigvecs = eigvecs[:, idx]
-print(eigvals)
-X_filtered_next = sys.next(X_filtered)
-V = obs.eval(X_filtered)
-V_next = obs.eval(X_filtered_next)
-num = np.linalg.norm(V_next @ (eigvecs / eigvals) - V @ eigvecs, axis=0)
-den = np.linalg.norm(V @ eigvecs, axis=0)
-print(num / den)
-
-V_min = np.min(V, axis=0)
-V_max = np.max(V, axis=0)
-
 # ---- plotting ----
 
 if args.plot:
     from examples.utils import plot_learned_function, plt
-    fig = plot_learned_function(
-        sys, obs, eigvals, eigvecs, X_filtered,
-        plot_sample=True,
-        V_min=V_min,
-        V_max=V_max,
-    )
+    fig = plot_learned_function(sys, obs, eigvals, eigvecs, X)
     plt.show()
-    fig.savefig("duffing.png", dpi=300)
+    fig.savefig("figures/duffing.png", dpi=300)
