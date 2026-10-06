@@ -1,0 +1,396 @@
+from __future__ import annotations
+
+from itertools import product
+from typing import Literal
+from abc import ABC, abstractmethod
+import numpy as np
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.linear_model import Ridge
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader, TensorDataset
+
+
+class AbstractObserver(ABC):
+    """
+    Abstract base class for vector-valued observable functions.
+
+    Attributes
+    ----------
+    input_dim : int
+        Dimension of the input.
+    output_dim : int
+        Dimension of the output.
+    dtype: np.dtype
+        Floating dtype used for numpy arrays.
+    """
+
+    input_dim: int
+    output_dim: int
+    dtype: np.dtype
+
+    def _validate_fit_inputs(
+        self, X: np.ndarray, V: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
+        X = np.asarray(X, dtype=self.dtype)
+        V = np.asarray(V, dtype=self.dtype)
+
+        if X.ndim != 2 or X.shape[1] != self.input_dim:
+            raise ValueError(
+                f"X must have shape (N, {self.input_dim}), got {X.shape}."
+            )
+        if V.ndim != 2 or V.shape[1] != self.output_dim:
+            raise ValueError(
+                f"V must have shape (N, {self.output_dim}), got {V.shape}."
+            )
+        if X.shape[0] != V.shape[0]:
+            raise ValueError(
+                f"X and V must have the same number of samples, "
+                f"got {X.shape[0]} and {V.shape[0]}."
+            )
+
+        return X, V
+
+    def _validate_eval_input(self, X: np.ndarray) -> np.ndarray:
+        X = np.asarray(X, dtype=self.dtype)
+
+        if X.ndim != 2 or X.shape[1] != self.input_dim:
+            raise ValueError(
+                f"X must have shape (N, {self.input_dim}), got {X.shape}."
+            )
+
+        return X
+
+    @abstractmethod
+    def fit(self, X: np.ndarray, V: np.ndarray) -> None:
+        """
+        Fit the observer so that ``eval(X)`` approximates ``V``.
+
+        Parameters
+        ----------
+        X : ndarray of shape (N, input_dim)
+            Input points at which the observer is fit.
+        V : ndarray of shape (N, output_dim)
+            Target values of the observer at the points ``X``.
+        """
+        raise NotImplementedError
+
+    @abstractmethod
+    def eval(self, X: np.ndarray) -> np.ndarray:
+        """
+        Evaluate the observer.
+
+        Parameters
+        ----------
+        X : ndarray of shape (N, input_dim)
+            Input points.
+
+        Returns
+        -------
+        V : ndarray of shape (N, output_dim)
+            Observer values at the input points.
+        """
+        raise NotImplementedError
+
+
+class MonomialObserver(AbstractObserver):
+    """
+    Observer that returns the monomial basis up to a given total degree.
+
+    For ``x = (x_1, ..., x_n)'', the observer returns all monomials
+
+        ``x_1^a1 * x_2^a2 * ... * x_n^an''
+
+    such that
+
+        ``a1 + a2 + ... + an <= degree.''
+
+    Parameters
+    ----------
+    input_dim : int
+        Dimension of the input space.
+    degree : int, default=2
+        Maximum total degree of the monomial basis.
+    dtype : {'float32', 'float64'}, default='float64'
+        Floating dtype used for numpy arrays.
+    """
+
+    def __init__(
+        self,
+        input_dim: int,
+        degree: int = 2,
+        *,
+        dtype: Literal["float32", "float64"] = "float64",
+    ):
+        self.input_dim = int(input_dim)
+        self.degree = int(degree)
+
+        if dtype == "float64":
+            self.dtype = np.float64
+        elif dtype == "float32":
+            self.dtype = np.float32
+        else:
+            raise ValueError("dtype must be 'float32' or 'float64'.")
+
+        if self.input_dim <= 0:
+            raise ValueError("input_dim must be positive.")
+        if self.degree < 0:
+            raise ValueError("degree must be nonnegative.")
+
+        self.exponents = self._build_exponents()
+        self.output_dim = self.exponents.shape[0]
+
+    def _build_exponents(self) -> np.ndarray:
+        exponents = []
+
+        for powers in product(range(self.degree + 1), repeat=self.input_dim):
+            total_degree = sum(powers)
+            if total_degree <= self.degree:
+                exponents.append(powers)
+
+        # Order by total degree, then lexicographically
+        exponents.sort(key=lambda p: (sum(p), p))
+        return np.asarray(exponents, dtype=np.int64)
+    
+    def fit(self, X: np.ndarray, V: np.ndarray) -> None:
+        pass
+    
+    def eval(self, X: np.ndarray) -> np.ndarray:
+        X = self._validate_eval_input(X)
+
+        N = X.shape[0]
+        V = np.ones((N, self.output_dim), dtype=self.dtype)
+
+        for j, exp in enumerate(self.exponents):
+            V[:, j] = np.prod(X ** exp, axis=1)
+
+        return V.astype(self.dtype, copy=False)
+    
+
+class PolynomialObserver(AbstractObserver):
+    """
+    Polynomial observer implemented using scikit-learn.
+
+    Notes
+    -----
+    The model internally computes
+
+        ``V ≈ Φ(X) @ W + b``
+
+    where ``Φ(X)`` are polynomial features of ``X``.
+
+    Parameters
+    ----------
+    input_dim : int
+        Dimension of the input space.
+    output_dim : int
+        Dimension of the observable output.
+    degree : int, default=2
+        Maximum degree of the polynomial feature expansion.
+    alpha : float, default=1e-6
+        Ridge regularization strength. Set to ``0.0`` for (near)
+        ordinary least squares.
+    dtype : {'float32', 'float64'}, default='float64'
+        Floating dtype used for numpy arrays.
+    """
+
+    def __init__(
+        self,
+        input_dim: int,
+        output_dim: int,
+        degree: int = 2,
+        *,
+        alpha: float = 1e-6,
+        dtype: Literal["float32", "float64"] = "float64",
+    ):
+        self.input_dim = int(input_dim)
+        self.output_dim = int(output_dim)
+
+        if dtype == "float64":
+            self.dtype = np.float64
+        elif dtype == "float32":
+            self.dtype = np.float32
+        else:
+            raise ValueError("dtype must be 'float32' or 'float64'.")
+
+        self.degree = int(degree)
+        self.alpha = float(alpha)
+
+        self.model = Pipeline(
+            steps=[
+                ("poly", PolynomialFeatures(degree=self.degree, include_bias=False)),
+                ("reg", Ridge(alpha=self.alpha, fit_intercept=True)),
+            ]
+        )
+
+    def fit(self, X: np.ndarray, V: np.ndarray) -> None:
+        X, V = self._validate_fit_inputs(X, V)
+        self.model.fit(X, V)
+
+    def eval(self, X: np.ndarray) -> np.ndarray:
+        X = self._validate_eval_input(X)
+        return self.model.predict(X).astype(self.dtype, copy=False)
+    
+    
+class _MLP(nn.Module):
+    """
+    Simple fully-connected MLP used by ``NeuralObserver``.
+
+    Parameters
+    ----------
+    input_dim : int
+        Input dimension.
+    output_dim : int
+        Output dimension.
+    hidden_dims : tuple of int
+        Sizes of hidden layers.
+    activation : {'tanh', 'relu', 'gelu'}
+        Activation function.
+    """
+
+    def __init__(
+        self,
+        input_dim: int,
+        output_dim: int,
+        hidden_dims: tuple[int, ...],
+        activation: str
+    ):
+        super().__init__()
+
+        if activation == "tanh":
+            act = nn.Tanh
+        elif activation == "relu":
+            act = nn.ReLU
+        elif activation == "gelu":
+            act = nn.GELU
+        else:
+            raise ValueError("activation must be one of {'tanh', 'relu', 'gelu'}.")
+
+        layers: list[nn.Module] = []
+        prev = input_dim
+        for h in hidden_dims:
+            layers.append(nn.Linear(prev, h))
+            layers.append(act())
+            prev = h
+        layers.append(nn.Linear(prev, output_dim))
+
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Parameters
+        ----------
+        x : torch.Tensor of shape (N, input_dim)
+
+        Returns
+        -------
+        y : torch.Tensor of shape (N, output_dim)
+        """
+        return self.net(x)
+
+
+class NeuralObserver(AbstractObserver):
+    """
+    Neural-network observer implemented using PyTorch.
+
+    Notes
+    -----
+    The method ``fit`` performs gradient-based optimization for a fixed
+    number of epochs. The method ``eval`` runs the model in evaluation mode
+    and returns NumPy arrays on CPU.
+
+    Parameters
+    ----------
+    input_dim : int
+        Dimension of the input space.
+    output_dim : int
+        Dimension of the observable output.
+    hidden_dims : tuple of int, default=(64, 64)
+        Hidden layer sizes of the MLP.
+    activation : {'tanh', 'relu', 'gelu'}, default='tanh'
+        Activation function used between linear layers.
+    lr : float, default=1e-3
+        Learning rate for the optimizer.
+    weight_decay : float, default=0.0
+        Weight decay (L2 regularization) used by AdamW.
+    epochs : int, default=200
+        Number of training epochs per call to ``fit``.
+    device : {'cpu', 'cuda'}, optional
+        Device to use. If not provided, selects ``'cuda'`` when available,
+        else ``'cpu'``.
+    dtype : {'float32', 'float64'}, default='float64'
+        Floating dtype used for numpy arrays and torch tensors.
+    seed : int, optional
+        If provided, random seed for reproducibility.
+    """
+
+    def __init__(
+        self,
+        input_dim: int,
+        output_dim: int,
+        hidden_dims: tuple[int, ...] = (64, 64),
+        activation: str = "tanh",
+        *,
+        lr: float = 1e-3,
+        weight_decay: float = 0.0,
+        epochs: int = 200,
+        device: str | None = None,
+        dtype: Literal["float32", "float64"] = "float64",
+        seed: int | None = 0,
+    ):
+        self.input_dim = int(input_dim)
+        self.output_dim = int(output_dim)
+
+        if dtype == "float64":
+            self.dtype = np.float64
+            self.torch_dtype = torch.float64
+        elif dtype == "float32":
+            self.dtype = np.float64
+            self.torch_dtype = torch.float32
+        else:
+            raise ValueError("dtype must be 'float32' or 'float64'.")
+
+        if seed is not None:
+            torch.manual_seed(seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(seed)
+
+        if device is None:
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.device = torch.device(device)
+
+        self.model = _MLP(
+            self.input_dim, self.output_dim, hidden_dims, activation
+        ).to(
+            device=self.device, dtype=self.torch_dtype
+        )
+
+        self.loss_fn = nn.MSELoss()
+        self.optimizer = torch.optim.AdamW(
+            self.model.parameters(), lr=lr, weight_decay=weight_decay
+        )
+
+        self.epochs = int(epochs)
+
+    def fit(self, X: np.ndarray, V: np.ndarray) -> None:
+        X, V = self._validate_fit_inputs(X, V)
+        X_t = torch.as_tensor(X, dtype=self.torch_dtype, device=self.device)
+        V_t = torch.as_tensor(V, dtype=self.torch_dtype, device=self.device)
+
+        self.model.train()
+        for _ in range(self.epochs):
+            self.optimizer.zero_grad(set_to_none=True)
+            pred = self.model(X_t)
+            loss = self.loss_fn(pred, V_t)
+            loss.backward()
+            self.optimizer.step()
+
+    @torch.no_grad()
+    def eval(self, X: np.ndarray) -> np.ndarray:
+        X = self._validate_eval_input(X)
+        self.model.eval()
+        X_t = torch.as_tensor(X, dtype=self.torch_dtype, device=self.device)
+        V_t = self.model(X_t)
+
+        return V_t.cpu().numpy().astype(self.dtype, copy=False)
